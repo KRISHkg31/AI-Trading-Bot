@@ -1,0 +1,203 @@
+"""Centralised, versioned configuration (REQ-CFG-01/02/03, REQ-NFR-*).
+
+- Defaults live in ``config/default.yaml``; never hard-coded in modules.
+- Environment separation: dev / backtest / paper / live (REQ-CFG-05).
+- Any value can be overridden via env var ``AIBOT_<DOTTED_PATH>__<LEAF>``
+  (e.g. ``AIBOT_EXECUTION__MODE=live``).
+- Secrets come from environment / ``.env`` only via ``get_credentials``.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field, field_validator
+
+_ENV_OVERRIDE_PREFIX = "AIBOT_"
+_DOT_FILE_PATH = Path(__file__).resolve().parent.parent.parent.parent / "config" / "default.yaml"
+
+_VALID_ENVIRONMENTS = ("dev", "backtest", "paper", "live")
+
+
+class AppMeta(BaseModel):
+    name: str = "ai-trading-bot"
+    timezone: str = "UTC"
+    heartbeat_interval_seconds: int = 10
+
+
+class DataConfig(BaseModel):
+    default_timeframe: str = "5m"
+    buffer_bars: int = 200
+    stale_after_seconds: int = 30
+    retry_backoff_seconds: float = 1.0
+    store_dir: str = "data/raw"
+
+
+class RiskLimits(BaseModel):
+    """All risk thresholds are config-driven, never code (BR-07)."""
+
+    per_trade_risk_pct_default: float = 1.0
+    min_risk_reward: float = 1.5  # reward/risk must clear this
+    min_confidence: float = 0.5
+    max_daily_loss_pct: float = 3.0
+    max_drawdown_from_peak_pct: float = 15.0
+    max_symbol_exposure_pct: float = 10.0
+    max_total_exposure_pct: float = 60.0
+    cooldown_after_exit_seconds: int = 300
+    slippage_tolerance_pct: float = 0.1
+    circuit_breaker_max_orders_per_minute: int = 10
+    max_order_notional_usd: float = 250_000.0
+
+
+class ExecutionConfig(BaseModel):
+    """live | paper | dry_run. Paper/dry-run default until rollout gates pass (REQ-EXE-07/08)."""
+
+    mode: str = "paper"
+    default_order_type: str = "market"
+    retry_max_attempts: int = 3
+    idempotency_key_prefix: str = "tb"
+
+    @field_validator("mode")
+    @classmethod
+    def _mode_valid(cls, v: str) -> str:
+        if v not in ("live", "paper", "dry_run"):
+            raise ValueError(f"execution.mode must be live|paper|dry_run, got {v!r}")
+        return v
+
+
+class MonitoringConfig(BaseModel):
+    alert_channels: list[str] = Field(default_factory=list)
+    log_dir: str = "logs"
+    log_level: str = "INFO"
+
+
+class AppConfig(BaseModel):
+    environment: str = "dev"
+    app: AppMeta = Field(default_factory=AppMeta)
+    data: DataConfig = Field(default_factory=DataConfig)
+    risk: RiskLimits = Field(default_factory=RiskLimits)
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
+
+    @field_validator("environment")
+    @classmethod
+    def _env_valid(cls, v: str) -> str:
+        if v not in _VALID_ENVIRONMENTS:
+            raise ValueError(f"environment must be one of {_VALID_ENVIRONMENTS}, got {v!r}")
+        return v
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump()
+
+
+def _load_yaml_defaults() -> dict[str, Any]:
+    with open(_DOT_FILE_PATH, "r", encoding="utf-8") as fh:
+        return yaml.safe_load(fh) or {}
+
+
+def _apply_env_overrides(raw: dict[str, Any], environ: dict[str, str] | None = None) -> dict[str, Any]:
+    """Merge ``AIBOT_SECTION__KEY=VALUE`` into the nested dict (create sections as needed)."""
+    environ = environ if environ is not None else os.environ
+    for key, value in environ.items():
+        if not key.startswith(_ENV_OVERRIDE_PREFIX):
+            continue
+        path = [p.lower() for p in key[len(_ENV_OVERRIDE_PREFIX):].split("__")]
+        node = raw
+        for part in path[:-1]:
+            node = node.setdefault(part, {})
+        node[path[-1]] = _coerce(value)
+    return raw
+
+
+def _coerce(value: str) -> Any:
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    if value.lower() in ("true", "false"):
+        return value.lower() == "true"
+    return value
+
+
+_CONFIG_CACHE: dict[str, AppConfig] = {}
+
+
+def load_config(profile: str | None = None) -> AppConfig:
+    """Load config for a given environment profile (default: $AIBOT_ENVIRONMENT or 'dev')."""
+    env = profile or os.environ.get("AIBOT_ENVIRONMENT") or "dev"
+    if env in _CONFIG_CACHE:
+        return _CONFIG_CACHE[env]
+
+    load_dotenv()  # idempotent; pulls `.env` if present
+    raw = _load_yaml_defaults()
+    raw["environment"] = env
+    raw = _apply_env_overrides(raw)
+    config = AppConfig.model_validate(raw)
+    _CONFIG_CACHE[env] = config
+    return config
+
+
+@dataclass(frozen=True, slots=True)
+class Credentials:
+    """Optional broker/alert keys. All of them can be absent in dev/backtest."""
+
+    binance_api_key: str | None = None
+    binance_api_secret: str | None = None
+    binance_testnet: bool = False
+    coinbase_api_key: str | None = None
+    coinbase_api_secret: str | None = None
+    coinbase_api_passphrase: str | None = None
+    alpaca_api_key: str | None = None
+    alpaca_api_secret: str | None = None
+    alpaca_paper: bool = True
+    zerodha_api_key: str | None = None
+    zerodha_api_secret: str | None = None
+    zerodha_access_token: str | None = None
+    telegram_bot_token: str | None = None
+    slack_webhook_url: str | None = None
+    anthropic_api_key: str | None = None
+
+
+def get_credentials() -> Credentials:
+    """Read secrets from the environment / ``.env``. Never logs or persists them."""
+    return Credentials(
+        binance_api_key=os.environ.get("BINANCE_API_KEY"),
+        binance_api_secret=os.environ.get("BINANCE_API_SECRET"),
+        binance_testnet=os.environ.get("BINANCE_TESTNET", "").lower() == "true",
+        coinbase_api_key=os.environ.get("COINBASE_API_KEY"),
+        coinbase_api_secret=os.environ.get("COINBASE_API_SECRET"),
+        coinbase_api_passphrase=os.environ.get("COINBASE_API_PASSPHRASE"),
+        alpaca_api_key=os.environ.get("ALPACA_API_KEY"),
+        alpaca_api_secret=os.environ.get("ALPACA_API_SECRET"),
+        alpaca_paper=os.environ.get("ALPACA_PAPER", "true").lower() != "false",
+        zerodha_api_key=os.environ.get("ZERODHA_API_KEY"),
+        zerodha_api_secret=os.environ.get("ZERODHA_API_SECRET"),
+        zerodha_access_token=os.environ.get("ZERODHA_ACCESS_TOKEN"),
+        telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN"),
+        slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL"),
+        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+    )
+
+
+def validate_config(config: AppConfig) -> list[str]:
+    """Sanity checks across sections (catches misconfig before deployment, BR-07)."""
+    problems: list[str] = []
+    r = config.risk
+    if r.max_daily_loss_pct <= 0:
+        problems.append("risk.max_daily_loss_pct must be > 0")
+    if r.max_drawdown_from_peak_pct <= 0:
+        problems.append("risk.max_drawdown_from_peak_pct must be > 0")
+    if not (0.0 < r.min_confidence < 1.0):
+        problems.append("risk.min_confidence must be in (0, 1)")
+    if r.per_trade_risk_pct_default <= 0 or r.per_trade_risk_pct_default > 5:
+        problems.append("risk.per_trade_risk_pct_default outside sane range (0, 5]")
+    return problems

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pdftotext -layout AI_Trading_Bot_BRD.pdf /tmp/brd.txt)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(pdftotext -layout AI_Trading_Bot_BRD_Presentation.pdf /tmp/pres.txt)",
+      "Read(//tmp/**)",
+      "Bash(pdftotext -layout AI_Trading_Bot_BRD.pdf \"D:/AI-Trading-Bot/brd_extracted.txt\")",
+      "Bash(pdftotext -layout AI_Trading_Bot_BRD_Presentation.pdf \"D:/AI-Trading-Bot/pres_extracted.txt\")",
+      "Bash(python -m venv .venv)",
+      "Bash(./.venv/Scripts/python -m pip install --quiet --upgrade pip)",
+      "Bash(./.venv/Scripts/python -m pip install --quiet -e \".[dev]\")",
+      "Bash(echo \"INSTALL EXIT: $?\")",
+      "Bash(./.venv/Scripts/python -m pytest)",
+      "Bash(./.venv/Scripts/python -m ruff check src tests)",
+      "Bash(./.venv/Scripts/python -m ruff check --fix src tests)",
+      "Bash(./.venv/Scripts/python -)",
+      "Bash(./.venv/Scripts/python -m pip install --quiet pyarrow)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'Phase 0 scaffold: foundation + data layer *)",
+      "Bash(git config *)",
+      "Bash(git reset *)",
+      "Bash(git commit -q -m 'Phase 0 scaffold: foundation + data layer *)"
+    ]
+  }
+}

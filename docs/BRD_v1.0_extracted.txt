@@ -1,0 +1,1007 @@
+BUSINESS REQUIREMENTS
+         DOCUMENT
+
+    AI-Powered Multi-Asset Trading Bot
+
+             Data · Intelligence · Execution · Risk Management
+
+                                          Version 1.0
+                         Prepared for Client Stakeholder Review
+
+                                       September 2026
+
+                                                     1
+1. Document Control
+
+1.1 Version History
+
+Version              Date             Author         Description of Change
+0.1                  2026-09-08       Product Owner
+                                      Product Owner  Initial draft of business
+0.9                  2026-09-12                      context and scope
+                                      Product Owner
+1.0                  2026-09-15                      Full functional and non-
+                                                     functional requirements,
+                                                     risk layer spec
+
+                                                     Baseline for client
+                                                     stakeholder review
+
+1.2 Approvals        Name / Title     Signature      Date
+
+ Role
+ Product Owner
+ Business Sponsor
+ Risk & Compliance
+
+1.3 Reference Documents               Title
+                                      Risk Management Framework v2.0
+ Reference                            Backtesting & Validation Methodology
+ REQ-RM-01                            Information Security & Secrets Management Standard
+ REQ-BT-01                            Applicable Market & Algorithmic Trading Regulations
+ REQ-SEC-01                           (region-specific)
+ REG-01
+
+2. Executive Summary
+
+This document defines the complete business requirements for an AI-powered, multi-asset algorithmic
+trading bot. The system autonomously ingests real-time and historical market data, generates trading
+signals using a combination of rule-based technical analysis and machine-learning models, validates
+
+                                   2
+every signal through a multi-layered risk engine, and executes orders across multiple broker and
+exchange integrations -- all while continuously monitoring performance, P&L, and risk exposure.
+The solution is designed to operate unattended 24/7 across crypto, US equities, and Indian equities, with
+a modular architecture that separates data, intelligence, risk, execution, and monitoring concerns. The
+single most important design principle in this document is that capital protection precedes profit: every
+trading decision passes through an independent risk engine before any order is placed, and a suite of
+system-level safeguards can halt trading automatically at any time.
+Purpose of this document: to align the business sponsor, product owner, engineering, and
+risk/compliance teams on what the trading bot must do, how it must behave, and the rules it must
+never violate -- before any engineering effort begins.
+
+It is not a technical design document. The architecture summary (Section 12) is provided for context; the
+authoritative design outputs are produced in the subsequent Solution Design phase.
+
+3. Business Context & Opportunity
+
+3.1 Background
+
+Markets are increasingly fast, data-dense, and unforgiving to manual decision-making. Human traders
+are constrained by attention, latency, and emotion. An algorithmic trading system removes emotional
+bias, applies rules consistently, scales across many assets simultaneously, and can react to market
+events in milliseconds. However, the same properties make it dangerous if poorly controlled -- a bug or
+an over-aggressive strategy can produce large losses faster than a human could intervene. This
+document therefore treats risk management as a first-class, non-negotiable requirement equal in
+importance to the trading logic itself.
+
+3.2 Opportunity
+
+ Capture opportunities across multiple markets and asset classes from a single system.
+ Apply systematic, repeatable strategies that do not fatigue or yield to fear/greed.
+ Backtest strategies on historical data before risking capital, and paper-trade before going live.
+ Continuously monitor and meter risk in a way a manual trader cannot.
+ Create a foundation that can be extended with new models, brokers, and asset classes over time.
+
+                                                               3
+4. Objectives, Goals & Success Metrics
+
+4.1 Primary Objectives
+
+     1. Deliver an autonomous trading system that ingests live data, generates signals, and executes
+     orders with zero manual intervention during normal operation.
+     2. Protect capital above all else: enforce hard, configurable risk limits that can stop trading
+     automatically.
+     3. Provide a fully transparent, auditable trail of every decision, trade, and risk rejection.
+     4. Support multiple asset classes (crypto, US equities, Indian equities) through pluggable broker
+     adapters.
+     5. Enable quantifiable validation through backtesting and paper-trading before live deployment.
+
+4.2 Success Metrics (KPI targets)
+
+KPI                  Definition                            Target
+System uptime                                               99.5%
+Signal latency       Percentage of scheduled trading
+Win rate             hours the bot is live                 < 500 ms (intraday)
+Max drawdown
+Risk limit breaches  Time from data tick arrival to order   55% (strategy-dependent)
+Strategy validation  submission
+Audit completeness                                          15% (configurable halts at
+                     Proportion of completed trades        threshold)
+                     that are profitable                   0 by design (hard limits)
+
+                     Worst peak-to-trough equity           100%
+                     decline
+                                                           100%
+                     Number of times the bot violates a
+                     configured risk limit
+
+                     Strategies validated via backtest +
+                     paper before live
+
+                     Of decisions logged for
+                     reconstruction
+
+Success is not defined by maximum profit. It is defined by surviving through adverse conditions while
+capturing positive expectancy -- measured by risk-adjusted returns (Sharpe ratio), controlled
+drawdown, and zero unrecoverable risk-limit breaches.
+
+                                   4
+5. Scope
+
+5.1 In Scope (This Project)
+
+     1. A modular trading-bot platform with clearly separated data, strategy, risk, execution, and
+     monitoring layers.
+
+     2. Real-time and historical market-data ingestion for crypto, US equities, and Indian equities.
+
+     3. A strategy framework supporting both rule-based technical strategies and ML/AI model-driven
+     strategies.
+
+     4. A feature-engineering pipeline that transforms raw market data into model-ready inputs.
+
+     5. A multi-layer risk-management engine that validates and sizes every trade before execution.
+
+     6. Order management, execution, and reconciliation across at least one broker per supported asset
+     class.
+
+     7. Backtesting and paper-trading environments.
+
+     8. Monitoring, alerting, logging, and a control dashboard.
+
+     9. Configuration management and a manual kill switch.
+
+     10. Deployment and 24/7 hosting infrastructure.
+
+5.2 Out of Scope (This Phase)
+
+ High-frequency / market-making strategies requiring colocated, nanosecond-scale infrastructure.
+ Order-routing across multiple simultaneous brokers for price improvement (supported for a single
+
+    primary broker per market in v1).
+ Derivatives, options, or leveraged margin trading (explicitly disabled unless a later release enables
+
+    them).
+ Retail-facing mobile/web front-end for client account management by end consumers.
+ Tax calculation and reporting (interface only; computation deferred).
+ Sub-second colocated high-frequency execution (list as future enhancement).
+
+6. Stakeholders & Actor Roles
+
+Actor / Stakeholder       Role in the System                  Primary Interest
+Business Sponsor                                              Outcome, profit, capital protection
+Product Owner             Funds the project, owns ROI and
+Quant / Strategy Analyst  strategic alignment                 Scope, acceptance, value delivery
+Trader / Risk Manager
+                          Owns requirements and               Strategy performance, backtest
+                          prioritisation                      fidelity
+                                                              Exposure control, interventions
+                          Designs and tunes strategies and
+                          models
+
+                          Monitors live behaviour, sets risk
+
+                          5
+                            limits, can halt
+
+Platform / DevOps Engineer  Builds, deploys, operates and keeps Reliability, observability, security
+Compliance Officer          the bot healthy
+End Investor (Client)
+                            Ensures regulatory adherence per     Regulatory compliance, audit trails
+                            jurisdiction
+
+                            Provides capital and expects         Transparency, performance, safety
+                            managed returns                      of capital
+
+7. Functional Requirements
+
+Each requirement carries a unique ID for traceability. Priority is marked H = High (must have for go-live),
+M = Medium (should have), L = Low (nice to have). Traceability to objectives and modules is noted.
+
+7.1 Data Layer              Requirement                          Priority
+
+ ID                         Connect to real-time market-data H
+ REQ-DAT-01                 feeds for crypto, US equities, and
+                            Indian equities via
+ REQ-DAT-02                 exchange/broker APIs or data
+                            providers (e.g., Binance, Alpaca,
+ REQ-DAT-03                 Interactive Brokers, Polygon.io,
+ REQ-DAT-04                 Zerodha/NSE).
+ REQ-DAT-05
+ REQ-DAT-06                 Provide historical data retrieval    H
+
+                            with configurable resolution (tick,
+
+                            1m, 5m, 15m, 1H, 1D, months) for
+
+                            backtesting and feature
+
+                            computation.
+
+                            Represent an internal, vendor-       H
+
+                            neutral data model so strategies
+
+                            are portable across data sources.
+
+                            Persist raw and cleaned market       H
+
+                            data to a time-series store for
+
+                            replay, audit and re-training.
+
+                            Detect stale, missing, or corrupted H
+                            data and flag it; do not trade on
+                            suspect data (ties to REQ-MON-04).
+
+                            Support optional auxiliary feeds:    M
+
+                            news/sentiment, order-book
+
+                            depth, and alternative data, behind
+
+                                              6
+            feature flags.
+
+REQ-DAT-07  Normalise timestamps to a single H
+REQ-DAT-08  timezone (UTC) and handle
+REQ-DAT-09  timezone/clock-skew between
+            feeds.
+
+            Allow per-data-source reconnect M
+            and backfill policies without
+            restarting the whole system.
+
+            Support a configurable data           H
+
+            buffer/window for real-time
+
+            feature computation (e.g., last N
+
+            bars).
+
+7.2 Strategy & Intelligence Layer
+
+ID          Requirement                           Priority
+REQ-STR-01
+REQ-STR-02  Support rule-based strategies using H
+            technical indicators (RSI, MACD,
+REQ-STR-03  moving averages, Bollinger Bands,
+REQ-STR-04  ATR).
+REQ-STR-05
+REQ-STR-06  Support ML/AI model-driven            H
+REQ-STR-07
+            strategies (regression,
+
+            classification, reinforcement
+
+            learning, and LLM-based signal
+
+            generation).
+
+            Provide a feature-engineering         H
+
+            pipeline that converts raw market
+
+            data into model inputs
+
+            reproducibly.
+
+            Support strategy versions and         H
+
+            model versions with explicit
+
+            rollback.
+
+            Allow multiple strategies to run      M
+
+            concurrently, each with
+
+            independent configuration.
+
+            Return a signal with required         H
+
+            elements: direction (buy/sell/hold),
+
+            confidence, and suggested horizon.
+
+            Expose a signature for model          M
+
+            inference; models may run in-
+
+            process or via a separate inference
+
+                                   7
+                       service.
+
+REQ-STR-08             Support scheduled retraining/re- M
+REQ-STR-09             scoring of ML models from
+REQ-STR-10             accumulated data.
+
+                       Store the exact model version and H
+                       parameters used for every
+                       inference (auditability).
+
+                       Allow strategies to be switched        H
+
+                       on/off and tuned without code
+
+                       redeploys (config-driven).
+
+7.3 Signal Generation  Requirement                            Priority
+
+ ID                    Convert model/strategy output          H
+ REQ-SIG-01
+                       into an unambiguous trading
+ REQ-SIG-02
+ REQ-SIG-03            decision: buy, sell, hold, or close
+ REQ-SIG-04
+                       position.
+ REQ-SIG-05
+ REQ-SIG-06            Compute a proposed position size H
+                       as part of the signal (further
+                       validated by the risk engine).
+
+                       Enforce a minimum confidence           H
+
+                       threshold before a signal is eligible
+
+                       for execution.
+
+                       Apply an expected-edge filter:         H
+
+                       reject signals whose expected
+
+                       reward is too small to clear costs
+
+                       and slippage.
+
+                       Apply a cooldown period that           M
+
+                       prevents re-entering a symbol too
+
+                       soon after exit (anti-whipsaw).
+
+                       Attach a machine-readable reason H
+                       code to every signal for logging and
+                       audit.
+
+                                       8
+7.4 Risk Management Layer (Capability-Critical)
+
+Risk management is the most important module in the system. The risk engine is an independent gate
+that sits between signal generation and execution. No order is placed unless the risk engine approves it.
+Cross-layer rules are enforced in four tiers.
+
+7.4.1 Trade-Level Rules     Requirement                          Priority
+                                                                 H
+ ID                         Every trade must carry a stop-loss
+ REQ-RSK-01                 (fixed % from entry or volatility-   H
+                            based, e.g., 1.5× ATR). A trade      H
+ REQ-RSK-02                 without a stop-loss is rejected.
+ REQ-RSK-03                                                      H
+                            Enforce a minimum risk-reward        M
+ REQ-RSK-04                 ratio (e.g., reward  1.5­2× risk)    H
+ REQ-RSK-05                 before approval.
+ REQ-RSK-06
+                            Reject orders whose estimated fill
+                            deviates more than a configurable
+                            slippage tolerance from the
+                            reference price.
+
+                            Enforce a signal confidence
+                            threshold; low-confidence signals
+                            are rejected.
+
+                            Enforce a cooldown after exit to
+                            prevent immediate re-entry
+                            (whipsaw guard).
+
+                            Reject any proposed order that
+                            fails a hard sanity check (e.g.,
+                            absurd size, zero/negative price).
+
+7.4.2 Position-Level Rules  Requirement                          Priority
+                                                                 H
+ ID                         Support risk-based position sizing:
+ REQ-RSK-11                 fixed-fractional, volatility (ATR)   H
+                            sizing, and fractional-Kelly,        H
+ REQ-RSK-12                 configurable per strategy.
+
+ REQ-RSK-13                 Cap risk per trade as a fixed % of
+                            account equity (default 0.5­2%,
+                            configurable).
+
+                            Cap maximum exposure to any
+                            single symbol (e.g.,  10% of
+
+                            9
+REQ-RSK-14                     portfolio).
+REQ-RSK-15
+                               Enforce correlation limits to avoid M
+                               unintentionally concentrated bets
+                               (e.g., multiple highly-correlated
+                               positions counted as one).
+
+                               Reject any trade that would exceed H
+                               position limits even if the signal
+                               otherwise passes.
+
+7.4.3 Portfolio-Level Rules    Requirement                          Priority
+
+ ID                            Enforce a max daily-loss limit; halt H
+ REQ-RSK-21                    trading for the session when
+ REQ-RSK-22                    reached (e.g.,  3­5% down).
+
+ REQ-RSK-23                    Enforce a max drawdown-from-         H
+ REQ-RSK-24
+ REQ-RSK-25                    peak limit (e.g.,  15­20%) that
+
+ REQ-RSK-26                    halts trading and requires manual
+
+                               review.
+
+                               Enforce a total-exposure cap across H
+                               all open positions, leaving a buffer
+                               for margin and volatility.
+
+                               Enforce sector/asset-class           M
+
+                               concentration limits.
+
+                               Maintain a live account-state        H
+
+                               tracker (equity, open positions,
+
+                               today's P&L, drawdown) updated
+
+                               after every fill.
+
+                               Catalog every risk rejection with a H
+                               reason code for reporting.
+
+7.4.4 System-Level Safeguards
+
+ID                             Requirement                          Priority
+                                                                    H
+REQ-RSK-31                     Circuit breaker: auto-halt if an
+                               anomalous burst of orders occurs     H
+                               in a short window (bug / feedback-
+                               loop guard).
+
+REQ-RSK-32                     Pause trading if market data goes
+                               stale, missing, or corrupted (data-
+
+                                                  10
+            quality kill).
+
+REQ-RSK-33  Provide a manual kill switch          H
+REQ-RSK-34
+REQ-RSK-35  triggerable remotely (e.g., from a
+REQ-RSK-36
+            mobile device) that stops all new
+
+            orders immediately.
+
+            Dead-man's switch: if the             H
+
+            monitoring heartbeat is not
+
+            received within a configured
+
+            interval, default to flat / no new
+
+            positions.
+
+            On a kill switch or system halt,      H
+
+            cancel open pending orders and
+
+            make positions safe (close or hedge
+
+            per policy).
+
+            Expose all risk thresholds as config, H
+            never hard-coded, so they can be
+            tuned without redeploying.
+
+Design intent: system-level safeguards are the ultimate failsafe. Even if strategy logic or models behave
+unexpectedly, the platform must be able to stop itself or be stopped by an operator within seconds, and
+default to a safe, flat, or hedged state.
+
+7.5 Execution Layer & Order Management
+
+ID          Requirement                           Priority
+REQ-EXE-01                                        H
+            Integrate with at least one
+REQ-EXE-02  broker/exchange adapter per           H
+            supported asset class for live order
+REQ-EXE-03  placement.                            H
+REQ-EXE-04                                        H
+            Support required order types:
+            market, limit, stop-loss, and take-
+            profit (and stop-limit where
+            applicable).
+
+            Track fills, partial fills, and
+            cancellations across the order
+            lifecycle.
+
+            Reconcile internal order state
+            against broker/exchange state; flag
+            discrepancies.
+
+                            11
+REQ-EXE-05  Implement resubmission/retry              H
+REQ-EXE-06
+REQ-EXE-07  logic with idempotency to avoid
+REQ-EXE-08
+REQ-EXE-09  duplicate orders on network
+REQ-EXE-10
+            retries.
+
+            Manage slippage on market orders H
+            and validate fill price against
+            tolerance.
+
+            Support a paper-trading mode              H
+
+            where orders are simulated against
+
+            real-time data without capital.
+
+            Support dry-run mode where                H
+
+            signals are generated and risk-
+
+            checked but no orders are actually
+
+            sent.
+
+            Provide graceful handling of broker H
+            API errors, rate limits, and
+            disconnects.
+
+            Keep the internal portfolio state in H
+            sync with actual positions after
+            every fill.
+
+7.6 Monitoring, Alerting & Logging
+
+ID          Requirement                               Priority
+REQ-MON-01
+REQ-MON-02  Provide a real-time dashboard of H
+REQ-MON-03  positions, equity curve, open
+REQ-MON-04  orders, signals, and risk rejections.
+REQ-MON-05
+            Send alerts via email, Telegram,          H
+
+            and Slack on: fills, risk halts, errors,
+
+            anomalies, and disconnects.
+
+            Persist immutable logs of every           H
+
+            signal, risk decision, order attempt,
+
+            fill, and rejection.
+
+            Continuously validate data                H
+
+            freshness and integrity; alert if data
+
+            is stale or suspicious.
+
+            Track and report performance              H
+
+            metrics: Sharpe ratio, max
+
+            drawdown, win rate, profit factor,
+
+            avg trade.
+
+                                    12
+REQ-MON-06       Provide a heartbeat signal from the H
+REQ-MON-07       core loop consumed by the dead-
+REQ-MON-08       man's switch (REQ-RSK-34).
+REQ-MON-09
+                 Support historical trade-log replay M
+                 and query for audit and post-
+                 mortems.
+
+                 Provide role-based access so only H
+                 authorised users can change risk
+                 limits or halt trading.
+
+                 Alert with escalation to a human if M
+                 the bot is halted or in an
+                 anomalous state for longer than a
+                 threshold.
+
+7.7 Configuration & Administration
+
+ID               Requirement                          Priority
+REQ-CFG-01                                            H
+                 Provide centralised, versioned
+REQ-CFG-02       configuration for all thresholds,    H
+                 limits, and preferences (no hard-
+REQ-CFG-03       coded values).                       H
+REQ-CFG-04                                            M
+REQ-CFG-05       Allow non-code changes to            H
+                 thresholds (risk limits, cooldowns,
+                 exposure caps) only through
+                 approved config changes.
+
+                 Enforce that every parameter
+                 change is logged and auditable.
+
+                 Provide an administrative interface
+                 to view, enable/disable, and
+                 configure strategies.
+
+                 Support environment separation
+                 (dev, backtest, paper, live) with
+                 credential isolation.
+
+8. Non-Functional Requirements
+
+8.1 Performance  Requirement                          Target
+
+ ID
+
+                                    13
+REQ-NFR-01    End-to-end latency from data tick   < 500 ms
+              to order submission (intraday)
+REQ-NFR-02    Risk-engine decision latency        < 25 ms
+REQ-NFR-03    Data-feed processing throughput     Sustain peak tick rate without
+                                                  backlog
+REQ-NFR-04    Backtest engine speed               Process months of data in minutes
+
+8.2 Reliability & Availability
+
+ID            Requirement                         Target
+REQ-NFR-11
+REQ-NFR-12    Scheduled-hours system availability  99.5%
+
+REQ-NFR-13    Failure recovery                    Auto-restart / failover without
+REQ-NFR-14                                        manual intervention for the core
+                                                  loop
+
+              Graceful degradation                On data loss, pause not error spike
+                                                  orders
+
+              State durability                    No loss of trade, order, or risk
+                                                  records on crash
+
+8.3 Security  Requirement                         Target
+              Secrets and API credentials
+ ID           Transport security                  Stored encrypted (secret manager),
+ REQ-NFR-21   Access control                      never in code or logs
+              Audit logging
+ REQ-NFR-22   Third-party supply-chain integrity  TLS for all external and inter-
+                                                  service communication
+ REQ-NFR-23
+                                                  Role-based access control (RBAC)
+ REQ-NFR-24                                       with least privilege
+
+ REQ-NFR-25                                       Tamper-evident logs of all config
+                                                  and risk-sensitive actions
+
+                                                  Pinned, vetted dependencies;
+                                                  minimal external surface
+
+                                14
+8.4 Scalability & Extensibility
+
+ Modular architecture allowing new brokers, data sources, strategies, and models to be added
+    without rework.
+
+ Support multiple concurrent strategies and symbols without architectural changes.
+ A pluggable model interface so models can run in-process or in a dedicated inference service.
+
+9. Business Rules
+
+Rule ID            Business Rule                        Source
+BR-01                                                   REQ-RSK-*
+BR-02              No order shall be placed without     REQ-RSK-01
+                   passing the risk engine.
+BR-03                                                   REQ-RSK-21
+BR-04              Every trade must have a stop-loss    REQ-RSK-22
+                   defined; trades without one are
+BR-05              rejected.                            REQ-RSK-33
+BR-06                                                   REQ-RSK-34
+                   Trading halts for the session when
+BR-07              the daily-loss limit is reached.     REQ-RSK-36, REQ-CFG-03
+
+BR-08              Trading halts and requires manual    REQ-DAT-05, REQ-RSK-32
+BR-09              review when the drawdown-from-       REQ-STR-09
+                   peak limit is reached.
+
+                   The bot must be able to be halted
+                   by a remote operator at any time.
+
+                   If the monitoring heartbeat is lost
+                   for the configured interval, the
+                   system defaults to flat / no new
+                   positions.
+
+                   All risk thresholds and limits are
+                   configuration, not code, and
+                   changes are logged.
+
+                   No trading shall occur on stale,
+                   missing, or corrupted data.
+
+                   All strategy and model versions
+                   used for decisions are recorded for
+                   audit.
+
+                   15
+10. Data Requirements
+
+10.1 Data Model Overview
+
+The system maintains a canonical, vendor-neutral model. Key entity groups: Market Data (instruments,
+price bars, ticks, order books, auxiliaries); Intelligence (features, signals, model versions, backtest runs);
+Risk & Position (account state, open positions, risk events/rejections, limits); Execution (orders, fills,
+allocations, cancellations); and Operations (logs, alerts, heartbeats, config versions).
+
+10.2 Data Retention          Retention                             Rationale
+                                                                   Model training & replay
+ Data Type                   As required for backtesting (rolling
+ Raw tick & bar data         window defined by license/data        Audit & post-mortem
+                             plan)                                 Regulatory & reconciliation
+ Signals & risk events                                             Operational
+ Orders & fills              Indefinite (immutable)                Traceability
+ Logs & alerts
+ Config & parameter history  Indefinite (immutable)
+
+                              1 year
+
+                             Indefinite
+
+11. Primary Operating Workflow
+
+The bot executes the following loop continuously at a frequency set by the strategy tier:
+     1. New market data arrives (tick, bar, or stream update).
+     2. Features are computed (indicators, price changes, volatility, etc.).
+     3. The strategy/model scores the data and emits a signal (direction, confidence, suggested size).
+     4. The risk engine validates the signal against trade-, position-, and portfolio-level rules.
+     5. If approved, the execution layer submits the order to the broker/exchange.
+     6. The system waits for fill confirmation, updates the portfolio and account-state trackers.
+     7. All decisions are logged; alerts fire on anomalies or halts.
+     8. Performance data feeds back for reporting and optional model retraining.
+
+                             16
+12. High-Level Architecture (Context)
+
+The following architecture is provided for context and stakeholder alignment; the authoritative design is
+the responsibility of the Solution Design phase.
+
+Layer                                Responsibilities                   Key Concerns
+
+Data Layer                           Feeds, historical data, persistence, Latency, integrity, freshness
+                                     data-quality checks
+
+Intelligence Layer                   Features, strategies, ML/AI models Reproducibility, versioning
+
+Signal Generation                    Decision synthesis, size,          Edge, confidence
+                                     confidence, filters
+
+Risk Engine                          Trade/position/portfolio/system    Capital protection (critical)
+                                     rules, sizing, halts
+
+Execution Layer                      Broker adapters, order lifecycle,  Reliability, idempotency
+                                     reconciliation
+
+Monitoring                           Dashboard, alerts, logs, heartbeat, Observability, audit
+                                     KPIs
+
+Infrastructure                       Hosting, scheduler/loop, database, Uptime, security, scalability
+                                     deployment
+
+Reference stack (business-agnostic starting point, final choice in design phase): Python; pandas, numpy,
+scikit-learn/PyTorch for modeling; ccxt or broker SDKs (Alpaca, Interactive Brokers, Zerodha Kite) for
+execution; backtrader/vectorbt for backtesting; a cloud VM for 24/7 uptime; paper trading before live.
+
+13. Integration Requirements
+
+Integration                          Direction                          Notes
+Market-data feeds / data providers   Inbound                            Crypto, US equities, Indian equities
+Broker / exchange APIs               Bidirectional                      Order placement; position &
+                                                                        account sync
+Alerting channels (Telegram, Slack,  Outbound                           Alerts & notifications
+email)
+                                     Inbound                            Credentials & thresholds
+Secrets manager & config service     Bidirectional                      Persist & query market data,
+                                                                        trades, logs
+Time-series / relational database                                       Metrics, logs, dashboard
+
+Monitoring/observability stack       Outbound
+                                                       17
+HUMAN (operator as the ultimate  Inbound                               Manual kill switch, config changes
+fallback)
+
+14. Compliance & Regulatory Requirements
+
+ The system must support jurisdictional compliance. In India, SEBI requires retail algo trading to use
+    an approved API/vendor platform and to disclose algorithmic orders; the design must accommodate
+    such requirements.
+
+ In the US, algorithmic trading is subject to SEC/FINRA market-access and supervision expectations.
+ Crypto trading must comply with applicable exchange/custody and local regulations.
+ The platform must provide a tamper-evident audit trail sufficient for regulatory review.
+ Leveraged/margin trading must remain disabled unless explicitly approved and compliant.
+ Final compliance sign-off is required before any live deployment.
+
+This document identities regulatory obligations as requirements; the legal interpretation of each
+jurisdiction is the responsibility of the client's legal/compliance counsel, not this document.
+
+15. Backtesting, Validation & Rollout Gates
+
+15.1 Backtesting Requirements
+
+ID                               Requirement                           Priority
+REQ-BT-01
+REQ-BT-02                        Simulate strategies on historical     H
+REQ-BT-03
+                                 data with realistic costs,
+REQ-BT-04
+                                 commissions, and slippage.
+REQ-BT-05
+                                 Support walk-forward and out-of- H
+                                 sample validation to detect
+                                 overfitting.
+
+                                 Stress-test strategies against        H
+
+                                 historical crashes (e.g., 2020 COVID
+
+                                 crash, 2022 bear market, flash
+
+                                 crashes).
+
+                                 Backtest the risk rules themselves H
+                                 -- confirming limits would have
+                                 triggered appropriately in adverse
+                                 periods.
+
+                                 Report standard performance and H
+
+                                              18
+REQ-BT-06  risk metrics from every backtest
+           run.
+
+           Record full backtest reproducibility H
+           (data version, model version,
+           params, seeds).
+
+15.2 Rollout Gates (Go/No-Go)
+
+A strategy may not go live until it passes, in order: (1) backtest validation, (2) paper trading over a
+defined period, and (3) a risk-review sign-off -- followed by small, graduated live sizing that increases
+only while limits hold.
+
+16. Deployment & Infrastructure Requirements
+
+ 24/7 operation unless the strategy tier and market schedule dictate otherwise.
+ Cloud hosting or a dedicated server with a scheduler/event loop to run continuously.
+ Time-series and relational database for market data, trades, logs, and signals.
+ Environment separation: development, backtest, paper trading, and live.
+ Automated deployment, health checks, and auto-restart for the core loop.
+ Backups for databases and configuration; disaster-recovery runbook.
+ Latency tiering: intraday (cloud VM is sufficient), swing/position (scheduled script is sufficient); fast
+
+    HFT is out of scope for v1.
+
+17. Assumptions, Dependencies & Constraints
+
+17.1 Assumptions
+
+ Brokers/exchanges used provide API access with acceptable rates and latency.
+ Historical data sufficient for backtesting the target strategies is available.
+ Client provides or sanctions the hosting environment and broker accounts.
+ Legal/compliance counsel confirms applicability before go-live.
+
+17.2 Dependencies
+
+ Availability and stability of broker/exchange APIs and data providers.
+ Cloud/infrastructure provisioning and credential management.
+ Third-party model frameworks (version-pinned).
+
+           19
+17.3 Constraints
+
+ No leveraged or derivatives trading (unless a later approved release).
+ High-frequency execution out of scope for this phase.
+ Single primary broker per market in v1.
+
+18. Risks & Mitigations
+
+Risk                       Impact                   Likelihood           Mitigation
+                           Poor live performance    High
+Overfitting & backtest                                                   Walk-forward, out-of-
+over-confidence                                                          sample, stress tests;
+                                                                         paper trading gate
+Slippage / latency vs      Reduced live edge        High
+backtest                                            Medium               Realistic cost modelling;
+                           Bad signals or missing                        fill-tolerance checks
+Data feed outages / stale  events
+data                                                                     Data-quality checks;
+                                                                         pause not spike; dead-
+API rate limits /          Missed fills, duplicate  Medium               man's switch
+disconnects                orders                   Medium
+                                                                         Retry with idempotency;
+Risk-limit                 Overexposure                                  graceful handler
+misconfiguration
+                           Legal exposure           Medium               Central config, RBAC,
+Regulatory non-                                                          review, and audit trail
+compliance                 Rapid uncontrolled losses Medium
+                                                                         Compliance sign-off; audit
+Bug / feedback loop in                                                   trail; regional rules
+order flow
+                                                                         Circuit breaker; order
+                                                                         burst detection; kill
+                                                                         switch
+
+19. Phased Delivery Plan
+
+Phase                      Scope                                 Exit Criteria
+Phase 0 -- Foundation
+Phase 1 -- Intelligence    Architecture, data layer, core loop,  Data ingestion stable; CI/CD in
+Phase 2 -- Risk Engine     config, secrets, environments         place
+Phase 3 -- Execution
+                           Feature pipeline, rule-based          Strategies run end-to-end in
+                           strategies, signal generation         backtest
+
+                           All four risk tiers, account-state    Risk rules validated; zero-limit-
+                           tracker, halts, kill switch           breach in simulation
+
+                           Broker adapters, order lifecycle,     Paper trading end-to-end; fills
+                           reconciliation, paper & dry-run       reconcile
+
+                                                    20
+Phase 4 -- ML Model Strategies  ML/AI models, retraining, model    ML strategies pass backtest + paper
+Phase 5 -- Observability & Ops  versioning                         gates
+Phase 6 -- Live Go-Live                                            Monitoring & rollback drill passed
+                                Dashboard, alerts, logging,
+                                heartbeats, runbooks               Staged live deployment per Rollout
+                                                                   Gates
+                                Graduated live sizing, compliance
+                                sign-off
+
+20. Acceptance Criteria (Go-Live Readiness)
+
+     All High-priority functional requirements (REQ-*) are implemented and demonstrable.
+     All Business Rules (BR-*) are enforced and verified by tests.
+     Every new strategy passes backtest, out-of-sample, and stress-test validation.
+     Paper trading completes the defined qualifying period without unexplained anomalies.
+     Risk engine demonstrates automatic halt on breach of daily-loss and drawdown limits.
+     Kill switch and dead-man's switch functionality verified in a live drill.
+     Data-quality checks pause trading on stale/corrupted data (verified by test).
+     Full audit trail reconstructible for a sample of decisions and trades.
+     Security review passed; credentials stored securely; RBAC enforced.
+     Compliance sign-off obtained for the relevant jurisdictions.
+     Monitoring dashboards and alerting configured and connected.
+     Deployment, backup, and disaster-recovery runbooks documented and drilled.
+
+21. Future Enhancements (Backlog)
+
+ Sub-second / high-frequency execution with colocated infrastructure.
+ Multi-broker order routing for price improvement.
+ Derivatives, options, and leverage (subject to risk and compliance approval).
+ Alternative data and sentiment integration at scale.
+ Advanced portfolio optimisation and dynamic hedging.
+ Tax computation and reporting integrations.
+
+                                21
+Appendix A. Requirement ID Traceability
+
+Requirement IDs are grouped by module for traceability: DAT = Data Layer; STR = Strategy; SIG = Signal
+Generation; RSK = Risk; EXE = Execution; MON = Monitoring; CFG = Configuration; NFR = Non-Functional;
+BT = Backtesting. Every requirement maps to one or more objectives in Section 4 and is verified through
+the Acceptance Criteria in Section 20.
+
+                                                              22
+

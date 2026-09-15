@@ -1,0 +1,38 @@
+# Central defaults for the AI Trading Bot. Profiles: dev / backtest / paper / live.
+# Select via AIBOT_ENVIRONMENT. Override any value with AIBOT_SECTION__KEY env vars.
+# All risk thresholds here are configuration, never hard-coded in code (BR-07).
+app:
+  name: ai-trading-bot
+  timezone: UTC
+  heartbeat_interval_seconds: 10
+
+data:
+  default_timeframe: 5m
+  buffer_bars: 200            # window for real-time feature computation (REQ-DAT-09)
+  stale_after_seconds: 30     # data older than this triggers the data-quality kill (REQ-RSK-32)
+  retry_backoff_seconds: 1.0
+  store_dir: data/raw
+
+risk:
+  per_trade_risk_pct_default: 1.0      # REQ-RSK-13, default 0.5-2%
+  min_risk_reward: 1.5                 # REQ-RSK-02, reward >= 1.5x risk
+  min_confidence: 0.5                  # REQ-RSK-05 / REQ-SIG-03
+  max_daily_loss_pct: 3.0              # REQ-RSK-21, session halt at 3-5%
+  max_drawdown_from_peak_pct: 15.0     # REQ-RSK-22, halt + manual review at 15-20%
+  max_symbol_exposure_pct: 10.0        # REQ-RSK-14
+  max_total_exposure_pct: 60.0         # REQ-RSK-23
+  cooldown_after_exit_seconds: 300     # REQ-RSK-06, anti-whipsaw
+  slippage_tolerance_pct: 0.1          # REQ-RSK-03 / REQ-EXE-06
+  circuit_breaker_max_orders_per_minute: 10  # REQ-RSK-31
+  max_order_notional_usd: 250000.0     # REQ-RSK-10 sane-caps the order size
+
+execution:
+  mode: paper          # live | paper | dry_run (REQ-EXE-07/08)
+  default_order_type: market
+  retry_max_attempts: 3
+  idempotency_key_prefix: tb
+
+monitoring:
+  alert_channels: []   # e.g. ["telegram", "slack"] once tokens set (REQ-MON-02)
+  log_dir: logs
+  log_level: INFO

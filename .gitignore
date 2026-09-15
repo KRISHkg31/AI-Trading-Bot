@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Secrets — never commit real credentials
+.env
+.env.local
+.env.*
+!.env.example
+
+# Data & logs
+data/
+logs/
+*.db
+*.sqlite3
+*.parquet
+
+# Test / tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Optional runtime
+*.pid
+nohup.out.claude/settings.local.json

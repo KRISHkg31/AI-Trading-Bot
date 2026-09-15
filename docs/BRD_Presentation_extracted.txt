@@ -1,0 +1,251 @@
+BUSINESS REQUIREMENTS DOCUMENT
+
+AI-Powered Multi-Asset Trading Bot
+
+Data · Intelligence · Execution · Risk Management
+
+Version 1.0 | September 2026
+Prepared for Client Stakeholder Review
+Executive Summary
+
+What we're building and why it matters
+
+An autonomous, AI-driven trading system that ingests real-time market data across
+crypto, US equities, and Indian equities -- generating and executing trading signals
+while enforcing a multi-layered risk engine that protects capital above all else.
+
+ D                                                      I                                               R
+
+Multi-Asset Coverage                                   AI + Rules Hybrid                               Capital Protection First
+
+Operates across crypto (Binance/Coinbase), US          Combines rule-based technical strategies (RSI,  Every trade passes through an independent risk
+equities (Alpaca/IBKR), and Indian equities (Zerodha)  MACD, MA) with ML/AI models -- retrained on     engine. Circuit breakers, daily-loss limits, drawdown
+-- all from a single modular platform.                 accumulated data and fully versioned.           halts, and a manual kill switch.
+
+Design Principle: Capital protection precedes profit.
+The Problem & Opportunity                                                   THE OPPORTUNITY
+
+     THE CHALLENGE                                                           Systematic, repeatable strategies that scale across assets.
+                                                                             Zero emotional bias -- consistent rules applied 24/7.
+      Markets are fast, data-dense, and unforgiving to manual decision-      Automated risk management that reacts faster than any human.
+     making.                                                                 Data-driven decisions with a full audit trail.
+      Human traders are constrained by attention, latency, and emotion.      Foundation for continuous improvement via ML retraining.
+      Poor risk control is the #1 reason retail algo bots fail.
+      Without automation, opportunities and threats are missed or acted on
+     too late.
+System Architecture
+
+Seven modular layers -- each independently tested and deployed
+
+DATA          Real-time feeds, historical data, data-quality checks, persistence  Risk engine sits
+                                                                                  between Signals and
+                                                                                  Execution -- NO order
+                                                                                  passes without approval.
+
+FEATURES      Feature pipeline transforming raw data into model-ready inputs
+
+INTELLIGENCE  Rule-based strategies + ML/AI models with versioning
+
+SIGNALS       Direction, confidence, size, edge filters, cooldown
+
+RISK ENGINE   Trade / position / portfolio / system-level safeguards
+
+EXECUTION     Broker adapters, order lifecycle, reconciliation, paper trading
+
+MONITORING    Dashboard, alerts, logs, heartbeat, KPIs, manual kill switch
+Data Layer
+
+The foundation: reliable, real-time, multi-source market data
+
+ C                           U                                    I
+
+Crypto                      US Equities                          India Equities
+
+Binance, Coinbase via ccxt  Alpaca, Interactive Brokers          Zerodha Kite / NSE
+24/7 markets                Market hours                         SEBI-regulated
+Tick, 1m, 5m, 1H, 1D        Polygon.io for data                  Kite Connect API
+
+ Vendor-neutral data model (strategies portable across sources)
+ Stale/missing data detection -- no trading on suspect data
+ Persistent storage for replay, audit, and retraining
+ Optional feeds: news/sentiment, order-book depth, alt data
+Strategy & Intelligence Layer                       ML/AI MODEL STRATEGIES
+
+Hybrid approach: rule-based + ML/AI models           Regression models for price prediction
+                                                     Classification for buy/sell/hold decisions
+    RULE-BASED STRATEGIES                            Reinforcement learning for adaptive sizing
+                                                     LLM-based signal generation
+      RSI (Relative Strength Index)                  Feature engineering pipeline (auto-generated inputs)
+      MACD (Moving Average Convergence Divergence)   Model versioning, rollback, and retraining
+      Moving Average crossovers (SMA, EMA)
+      Bollinger Bands for volatility breakouts
+      ATR-based stop-loss and position sizing
+      Configurable, transparent, easy to backtest
+
+All strategies are config-driven -- enable, disable, or tune without redeploying code. Every model version and parameter set is recorded for full auditability.
+Risk Management: The Core Priority
+
+More bots fail from poor risk control than bad predictions
+
+    0                        4                    <25ms                               100%
+
+Unacceptable risk        Independent             Risk engine                        Signals validated
+         limit breaches             risk layers           decision time                    before execution
+
+The risk engine is an independent gate between signals and execution -- NO order is placed unless it passes all four layers of risk checks.
+
+          1                                         2                                         3                                        4
+
+             TRADE LEVEL                             POSITION LEVEL                           PORTFOLIO LEVEL                            SYSTEM LEVEL
+Stop-loss required on every trade. Risk-  Risk-per-trade capped (0.5­2%). Single-    Max daily loss limit (3­5%) -- trading   Circuit breaker on order bursts. Data-
+                                                                                    halts. Max drawdown limit (15­20%) --     quality kill switch. Manual kill switch
+   reward  1.5×. Slippage tolerance.            symbol exposure cap ( 10%).         requires manual review. Total exposure   (phone-accessible). Dead-man's switch.
+ Confidence threshold. Anti-whipsaw       Correlation limits to avoid concentrated
+                                                                                                         cap.
+                 cooldown.                                     bets.
+Execution & Order Management
+
+Reliable, auditable, with paper-trading before live
+
+Order Types                Lifecycle                      Resilience
+
+Market, limit, stop-loss,  Track fills, partial fills,    Retry with idempotency,
+take-profit, stop-limit    cancellations, reconciliation  graceful error handling
+
+Modes                      Slippage                       Sync
+
+Live, paper-trading,       Validate fill price            Internal state stays in
+and dry-run for testing    against tolerance              sync after every fill
+Monitoring & Alerting                                           ALERT CHANNELS
+
+Full observability: see everything, be alerted to anything          Telegram
+
+     REAL-TIME DASHBOARD INCLUDES                                    Real-time trade and halt notifications
+
+      Live positions, equity curve, and open orders                 Slack
+      All recent signals and risk rejections with reason codes
+      Performance metrics: Sharpe, max drawdown, win rate            Team alerts and operational updates
+      Heartbeat status and system health indicators
+      Role-based access control for risk-sensitive actions          Email
+
+                                                                     Daily summaries and escalation alerts
+
+                                                                    Dashboard
+
+                                                                     In-app alerts with acknowledgement
+Key Business Rules
+
+Non-negotiable rules enforced by the risk engine
+
+BR-01                                             BR-02                                           BR-03
+
+No order passes without the risk engine.          Every trade must have a stop-loss.              Trading halts on daily-loss limit.
+
+BR-04                                             BR-05                                           BR-06
+
+Trading halts on max drawdown -- manual           Kill switch: halt from any device at any time.  Lose the heartbeat  default to flat.
+review required.
+
+BR-07                                             BR-08                                           BR-09
+
+All thresholds are config, not code -- changes    No trading on stale or corrupted data.          Every decision is auditable.
+logged.
+Non-Functional Requirements
+
+Performance, reliability, security, scalability
+
+ P                               R                        S                                   X
+
+Performance                     Reliability              Security                            Scalability
+
+< 500ms end-to-end latency       99.5% uptime target     Secrets in manager (never in code)  Modular -- add brokers/models
+< 25ms risk-engine decision     Auto-restart on failure  TLS everywhere                      Support multiple concurrent
+Sustained tick-rate processing  Graceful degradation     RBAC with least privilege           strategies and symbols
+
+COMPLIANCE & REGULATORY
+Supports SEBI (India) algo trading requirements, SEC/FINRA (US) supervision rules, and crypto regulations. Full audit trail for regulatory review. Legal sign-off required before live
+deployment.
+Backtesting & Validation
+
+No strategy goes live without passing rigorous gates
+
+       1                               2                               3                            4                             5
+
+            BACKTEST                    OUT-OF-SAMPLE                      STRESS TEST                 PAPER TRADE                      GO-LIVE
+
+Historical simulation           Walk-forward validation         COVID crash, bear markets,   Real-time simulation          Graduated sizing,
+          with realistic costs           to detect overfitting                flash crashes            before any capital            then full allocation
+
+WHAT GETS VALIDATED                                             HOW WE MEASURE IT
+
+ Strategy performance against benchmarks                         Sharpe ratio, max drawdown, win rate, profit factor
+ Risk rules trigger correctly in adverse periods                 Out-of-sample vs in-sample degradation
+ Full reproducibility (data version, model version, params)      Risk limits would have saved capital in past crashes
+Phased Rollout Plan
+
+Delivered incrementally -- each phase has clear exit criteria
+
+         Phase 0              Phase 1                 Phase 2                 Phase 3                  Phase 4                  Phase 5               Phase 6
+
+    Foundation           Intelligence            Risk Engine              Execution               ML Models               Observability             Go-Live
+
+Architecture, data   Feature pipeline,       All four risk tiers,    Broker adapters, paper   ML/AI strategies,        Dashboard, alerts,    Graduated live sizing,
+layer,                rule-based strategies      kill switch, halts  trading, reconciliation   retraining, versioning     logging, runbooks    compliance sign-off
+
+      CI/CD, config
+
+Gate: No strategy goes live until it passes backtest validation  paper trading period  risk-review sign-off  graduated live sizing that increases only while limits
+hold.
+Success Metrics (KPIs)
+
+We measure success by risk-adjusted returns and capital preservation
+
+      99.5%                               < 500ms                                    55%
+
+               System Uptime                          Signal Latency                             Win Rate
+
+Scheduled trading hours               Tick arrival to                         Profitable trades
+                     the bot is live                     order submission                     (strategy-dependent)
+
+       15%                                     0                                    100%
+
+               Max Drawdown                           Risk Breaches                             Audit Trail
+
+Worst peak-to-trough                  Violations of a                         Of decisions logged
+                     equity decline                    configured risk limit                    for reconstruction
+Key Risks & Mitigations
+
+Risk                  Impact                    Likelihood  Mitigation
+Overfitting           Backtest over-            High        Walk-forward, out-of-sample, stress tests; paper trading gate
+Slippage vs Backtest  confidence                            Realistic cost modelling; fill-tolerance checks
+                                                            Data-quality checks; pause not spike; dead-man's switch
+                      Reduced live edge         High        Retry with idempotency; graceful error handler
+                                                            Central config, RBAC, review, and audit trail
+Data Outages          Bad signals or blind      Medium      Compliance sign-off; audit trail; jurisdiction-specific rules
+API Failures          spots
+
+                      Missed fills, duplicates  Medium
+
+Misconfiguration      Overexposure              Medium
+
+Regulatory            Legal exposure            Medium
+Next Steps
+
+Path from this BRD to a live trading system
+
+1  BRD REVIEW & SIGN-OFF                                            2  SOLUTION DESIGN
+
+   Stakeholder alignment on scope, priorities, and risk thresholds     Technical architecture, data model, broker integration design
+
+          PHASE 0 KICKOFF                                                     PHASE 1­2: INTEL + RISK
+
+3                                                                   4
+            Environment setup, CI/CD, data layer implementation                 Strategies and risk engine -- the two most critical modules
+
+          PHASE 3­4: EXECUTION + ML                                           PHASE 5­6: OBSERVABILITY + GO-LIVE
+
+5                                                                   6
+            Broker adapters, paper trading, ML model integration                Monitoring, compliance sign-off, graduated live deployment
+
+                          Ready to begin Phase 0. Please confirm scope and risk thresholds to proceed.
+

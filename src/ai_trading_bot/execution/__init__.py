@@ -1,0 +1,1 @@
+"""Execution layer (REQ-EXE-*). Order lifecycle lands in Phase 3; interface lives here."""
