@@ -14,6 +14,9 @@ dependencies = [
     "pyarrow>=15.0",
 ]
 
+[project.scripts]
+ai-trading-bot = "ai_trading_bot.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
