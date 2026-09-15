@@ -4,6 +4,7 @@ Examples
 --------
   ai-trading-bot fetch BTC/USDT --timeframe 1h --days 2
   ai-trading-bot run --seconds 60
+  ai-trading-bot backtest BTC/USDT --days 60 --walk-forward --stress
 """
 
 from __future__ import annotations
@@ -35,6 +36,13 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--poll", type=float, default=30.0, help="poll interval in seconds")
     r.add_argument("--symbol", type=str, default="BTC/USDT")
     r.add_argument("--timeframe", type=str, default="5m")
+
+    b = sub.add_parser("backtest", help="run the cost-aware backtester on a symbol")
+    b.add_argument("symbol", type=str)
+    b.add_argument("--timeframe", type=str, default="5m")
+    b.add_argument("--days", type=int, default=30)
+    b.add_argument("--walk-forward", action="store_true", help="REQ-BT-03 out-of-sample run")
+    b.add_argument("--stress", action="store_true", help="REQ-BT-05 run adverse-regime scenarios")
 
     sub.add_parser("show-config", help="print the resolved config (no secrets)")
     return p
@@ -87,7 +95,55 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "backtest":
+        from ai_trading_bot.backtest import BacktestEngine, scenarios
+
+        inst = instrument(args.symbol)
+        tf = Timeframe(args.timeframe)
+        adapter = adapters[inst.asset_class]
+        end = dt.datetime.now(dt.UTC)
+        start = end - dt.timedelta(days=args.days)
+        bars = adapter.fetch_bars(inst, tf, start, end)
+        if not bars:
+            logging.getLogger("ai_trading_bot.cli").error("no data for %s", inst.id)
+            return 1
+        engine = BacktestEngine(config)
+        base = engine.run(inst, bars)
+        print(_format_report("backtest", base))
+        if args.walk_forward:
+            wf = engine.walk_forward(inst, bars)
+            print(_format_report("walk_forward", wf))
+            _print_delta(base, wf, "walk-forward")
+        if args.stress:
+            for name in ("flash_crash", "bear_market", "volatility_spike", "gap_down"):
+                transform = getattr(scenarios, name)
+                stress = engine.run_scenario(inst, bars, name, transform)
+                print(_format_report(f"scenario:{name}", stress))
+                _print_delta(base, stress, name)
+        return 0
+
     return 0
+
+
+def _format_report(label: str, result) -> str:
+    m = result.metrics.summary()
+    return (
+        f"\n=== {label} - {result.instrument_id} ===\n"
+        f"  return          {m['total_return_pct']:+.2f}%   ann {m['ann_return_pct']:+.2f}%\n"
+        f"  max drawdown    {m['max_drawdown_pct']:.2f}%   sharpe {m['sharpe']}  sortino {m['sortino']}\n"
+        f"  calmar          {m['calmar']}   profit factor {m['profit_factor']}\n"
+        f"  win rate        {m['win_rate']:.1%}  trades {m['n_trades']}  exposure {m['exposure_pct']:.1f}%\n"
+        f"  fees            ${m['fees_usd']:.2f}  final equity ${m['final_equity']:,.2f}"
+    )
+
+
+def _print_delta(base, other, label: str) -> None:
+    b, o = base.metrics.summary(), other.metrics.summary()
+    print(
+        f"  vs backtest: return {o['total_return_pct'] - b['total_return_pct']:+.2f}pp | "
+        f"max_dd {o['max_drawdown_pct'] - b['max_drawdown_pct']:+.2f}pp | "
+        f"sharpe {o['sharpe'] - b['sharpe']:+.2f}"
+    )
 
 
 if __name__ == "__main__":

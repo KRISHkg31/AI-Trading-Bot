@@ -70,6 +70,38 @@ class ExecutionConfig(BaseModel):
         return v
 
 
+class StrategyConfig(BaseModel):
+    """Active strategies and parameter overrides — switch/tune without redeploys (REQ-STR-10)."""
+
+    active: list[str] = Field(default_factory=lambda: ["ema_trend", "macd_crossover"])
+    params: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class CostConfig(BaseModel):
+    """Realistic execution cost model — shared by backtests and the edge filter (REQ-BT-02, REQ-SIG-04)."""
+
+    taker_fee_bps: float = 5.0
+    maker_fee_bps: float = 2.0
+    spread_bps: float = 2.0
+    slippage_bps: float = 1.0
+    fixed_usd: float = 0.0
+    min_edge_multiple: float = 2.0  # expected reward must clear >=Nx round-trip cost
+
+
+class BacktestConfig(BaseModel):
+    """Defaults for the cost-aware backtester (REQ-BT-01..07)."""
+
+    initial_equity: float = 10_000.0
+    risk_per_trade_pct: float = 1.0
+    stop_atr_mult: float = 2.0  # stop distance = N x ATR
+    take_profit_rr: float = 1.5  # matches risk.min_risk_reward
+    max_leverage: float = 1.0  # cap notional <= equity
+    bars_per_year: int = 105_120  # calendar-year count of 5m bars
+    walk_forward_folds: int = 3
+    walk_forward_test_frac: float = 0.25
+    seed: int = 42
+
+
 class MonitoringConfig(BaseModel):
     alert_channels: list[str] = Field(default_factory=list)
     log_dir: str = "logs"
@@ -80,6 +112,9 @@ class AppConfig(BaseModel):
     environment: str = "dev"
     app: AppMeta = Field(default_factory=AppMeta)
     data: DataConfig = Field(default_factory=DataConfig)
+    strategy: StrategyConfig = Field(default_factory=StrategyConfig)
+    costs: CostConfig = Field(default_factory=CostConfig)
+    backtest: BacktestConfig = Field(default_factory=BacktestConfig)
     risk: RiskLimits = Field(default_factory=RiskLimits)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)

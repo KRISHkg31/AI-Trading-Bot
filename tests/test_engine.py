@@ -1,6 +1,6 @@
 
 from ai_trading_bot.adapters.data import MarketDataAdapter
-from ai_trading_bot.config import load_config
+from ai_trading_bot.config import StrategyConfig, load_config
 from ai_trading_bot.domain import AssetClass, Bar, Timeframe, instrument, utc_now_ns
 from ai_trading_bot.engine import TradingEngine
 from ai_trading_bot.persistence import BarStore, EventLog
@@ -55,10 +55,10 @@ def test_engine_hold_path_and_heartbeat(tmp_path) -> None:
     bars = BarStore(base_dir=tmp_path / "raw").load_bars(inst.id, "5m")
     assert len(bars) == 1
 
-    # A HOLD/NO_STRATEGY signal was audited
+    # A HOLD/NO_SIGNAL signal was audited (flat data -> no strategy fired)
     signals = engine._events.query("signal")
     assert len(signals) == 1
-    assert signals[0]["payload"]["reason_code"] == "NO_STRATEGY"
+    assert signals[0]["payload"]["reason_code"] == "NO_SIGNAL"
     assert signals[0]["payload"]["direction"] == "hold"
 
 
@@ -69,3 +69,79 @@ def test_engine_data_quality_kill_flattens_risk(tmp_path) -> None:
 
     # Data-quality kill must flatten the risk gate (REQ-RSK-32)
     assert engine._risk._flattened is True
+
+
+class FakeTrendAdapter(MarketDataAdapter):
+    """30 steadily rising bars so EMATrend fires a real EMA_BULL BUY."""
+
+    def __init__(self, asset_class: AssetClass) -> None:
+        self.asset_class = asset_class
+        self.last_update_ns = utc_now_ns()
+
+    def fetch_bars(self, instrument, timeframe, start, end):
+        base = utc_now_ns()
+        step = 60 * 1_000_000_000  # 1m in ns
+        bars = []
+        for i in range(30):
+            px = 100.0 + i
+            bars.append(Bar(
+                instrument_id=instrument.id, timeframe=timeframe,
+                ts_utc_ns=base - (29 - i) * step,
+                open=px, high=px + 0.5, low=px - 0.5, close=px + 0.25,
+                volume=5.0, source="fake",
+            ))
+        return bars
+
+    def health(self) -> dict[str, object]:
+        return {"status": "ok"}
+
+
+def test_engine_signal_flows_to_risk_and_paper(tmp_path) -> None:
+    cfg = load_config("dev").model_copy(update={"strategy": StrategyConfig(active=["ema_trend"])})
+    inst = instrument("BTC/USDT")
+    adapter = FakeTrendAdapter(inst.asset_class)
+    store = BarStore(base_dir=tmp_path / "raw")
+    events = EventLog(db_path=tmp_path / "events.sqlite3")
+    engine = TradingEngine(cfg, market_data={inst.asset_class: adapter},
+                           store=store, eventlog=events)
+    engine.process_instrument(inst, Timeframe.M5)
+
+    # Strategy signal audited
+    signals = events.query("signal")
+    assert len(signals) == 1
+    payload = signals[0]["payload"]
+    assert payload["direction"] == "buy"
+    assert payload["reason_code"] == "EMA_BULL"
+    assert payload["confidence"] == 0.95  # max confidence 0.95 by design
+
+    # Passed the risk gate with approval
+    decisions = events.query("risk_decision")
+    assert len(decisions) == 1
+    assert decisions[0]["payload"]["approved"] is True
+
+
+def test_engine_edge_filter_blocks_and_audits_no_edge(tmp_path) -> None:
+    # Huge costs: ~1% ATR move cannot clear 2x round-trip cost -> REQ-SIG-04 blocks.
+    cfg = load_config("dev").model_copy(update={
+        "strategy": StrategyConfig(active=["ema_trend"]),
+        "costs": cfg_costs_with_high_fees(),
+    })
+    inst = instrument("BTC/USDT")
+    adapter = FakeTrendAdapter(inst.asset_class)
+    events = EventLog(db_path=tmp_path / "events.sqlite3")
+    engine = TradingEngine(cfg, market_data={inst.asset_class: adapter}, eventlog=events)
+    engine.process_instrument(inst, Timeframe.M5)
+
+    signals = events.query("signal")
+    assert len(signals) == 1
+    payload = signals[0]["payload"]
+    assert payload["direction"] == "hold"
+    assert payload["reason_code"] == "NO_EDGE"
+    assert payload["strategy_id"] == "ema_trend"
+
+
+def cfg_costs_with_high_fees():
+    from ai_trading_bot.config import load_config
+
+    base = load_config("dev")
+    return base.costs.model_copy(update={"taker_fee_bps": 70.0, "spread_bps": 5.0, "slippage_bps": 5.0})

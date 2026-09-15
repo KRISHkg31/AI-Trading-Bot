@@ -13,6 +13,10 @@ data:
   retry_backoff_seconds: 1.0
   store_dir: data/raw
 
+strategy:
+  active: [ema_trend, macd_crossover]  # strategies switched on without code redeploys (REQ-STR-10)
+  params: {}
+
 risk:
   per_trade_risk_pct_default: 1.0      # REQ-RSK-13, default 0.5-2%
   min_risk_reward: 1.5                 # REQ-RSK-02, reward >= 1.5x risk
@@ -25,6 +29,25 @@ risk:
   slippage_tolerance_pct: 0.1          # REQ-RSK-03 / REQ-EXE-06
   circuit_breaker_max_orders_per_minute: 10  # REQ-RSK-31
   max_order_notional_usd: 250000.0     # REQ-RSK-10 sane-caps the order size
+
+costs:
+  taker_fee_bps: 5.0     # realistic per-side costs (REQ-BT-02)
+  maker_fee_bps: 2.0
+  spread_bps: 2.0
+  slippage_bps: 1.0
+  fixed_usd: 0.0
+  min_edge_multiple: 2.0 # REQ-SIG-04: reward must clear >=2x round-trip cost
+
+backtest:
+  initial_equity: 10000.0
+  risk_per_trade_pct: 1.0
+  stop_atr_mult: 2.0
+  take_profit_rr: 1.5
+  max_leverage: 1.0
+  bars_per_year: 105120
+  walk_forward_folds: 3
+  walk_forward_test_frac: 0.25
+  seed: 42
 
 execution:
   mode: paper          # live | paper | dry_run (REQ-EXE-07/08)
