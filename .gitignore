@@ -36,4 +36,8 @@ Thumbs.db
 
 # Optional runtime
 *.pid
-nohup.out.claude/settings.local.json
+nohup.out
+
+# Local-only Claude/machine settings (kept out of the repo)
+.claude/settings.local.json
+.claude/state
