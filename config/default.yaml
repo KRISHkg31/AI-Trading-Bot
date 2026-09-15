@@ -18,6 +18,7 @@ strategy:
   params: {}
 
 risk:
+  initial_equity: 10000.0              # paper capital; real fills sync it (Phase 3)
   per_trade_risk_pct_default: 1.0      # REQ-RSK-13, default 0.5-2%
   min_risk_reward: 1.5                 # REQ-RSK-02, reward >= 1.5x risk
   min_confidence: 0.5                  # REQ-RSK-05 / REQ-SIG-03
@@ -28,7 +29,10 @@ risk:
   cooldown_after_exit_seconds: 300     # REQ-RSK-06, anti-whipsaw
   slippage_tolerance_pct: 0.1          # REQ-RSK-03 / REQ-EXE-06
   circuit_breaker_max_orders_per_minute: 10  # REQ-RSK-31
+  order_history_window_seconds: 60
   max_order_notional_usd: 250000.0     # REQ-RSK-10 sane-caps the order size
+  sizing_method: fractional            # fractional | atr | kelly (REQ-RSK-11/12)
+  kelly_fraction: 0.25
 
 costs:
   taker_fee_bps: 5.0     # realistic per-side costs (REQ-BT-02)

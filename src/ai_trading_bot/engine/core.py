@@ -9,9 +9,12 @@ risk gate, and execution is paper-logged until Phase 3.
 from __future__ import annotations
 
 import datetime as _dt
+import math
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+
+import pandas as _pd
 
 from ai_trading_bot.adapters.data import (
     DataQualityError,
@@ -29,9 +32,10 @@ from ai_trading_bot.domain import (
     Timeframe,
     utc_now_ns,
 )
+from ai_trading_bot.features import indicators
 from ai_trading_bot.monitoring import get_logger
 from ai_trading_bot.persistence import BarStore, EventLog
-from ai_trading_bot.risk import RiskGate
+from ai_trading_bot.risk import RiskContext, RiskGate
 from ai_trading_bot.signal import ExpectedEdgeFilter, SignalFilter
 from ai_trading_bot.strategy import BUILTIN_STRATEGIES, Strategy, make_hold
 
@@ -70,7 +74,11 @@ class TradingEngine:
         self._events = eventlog or EventLog()
         self._risk = risk or RiskGate(config.risk)
         self._heartbeat = heartbeat or Heartbeat()
-        self._account = AccountState(equity=0.0)
+        # Paper capital from config; Phase 3 syncs real fills into AccountState.
+        initial = config.risk.initial_equity
+        self._account = AccountState(
+            equity=initial, start_of_day_equity=initial, peak_equity=initial,
+        )
         # Config-driven strategy set (REQ-STR-10); parameter overrides apply here.
         base = dict(BUILTIN_STRATEGIES)
         if strategies:
@@ -143,6 +151,45 @@ class TradingEngine:
             return make_hold(instrument, strategy_id=edge_blocked[0], reason="NO_EDGE")
         return make_hold(instrument, strategy_id="none", reason="NO_SIGNAL")
 
+    _ATR_PERIOD = 14
+    _MIN_STOP_PCT = 0.001  # stops closer than 0.1% are degenerate
+
+    def _enrich_signal(self, signal: Signal, bars: Sequence) -> Signal:
+        """Attach trade-execution attributes the risk gate requires (REQ-RSK-01..06).
+
+        Stop = ATR x ``backtest.stop_atr_mult`` around the last close (matches the
+        backtest, so live and sim share stop logic); target = ``risk.min_risk_reward``
+        x risk distance (matches REQ-RSK-02); reference price = last close. If ATR is
+        not yet available (warm-up) the signal is returned unmodified and the risk
+        gate's NO_STOP_LOSS rule rejects it — a hard stop is never invented.
+        """
+        if signal.direction in (SignalDirection.HOLD, SignalDirection.CLOSE):
+            return signal
+        highs = _pd.Series([b.high for b in bars], dtype="float64")
+        lows = _pd.Series([b.low for b in bars], dtype="float64")
+        closes = _pd.Series([b.close for b in bars], dtype="float64")
+        atr = indicators.atr(highs, lows, closes, self._ATR_PERIOD)
+        ref = float(closes.iloc[-1])
+        if len(atr) == 0 or not math.isfinite(atr.iloc[-1]):
+            return signal  # risk gate will reject with NO_STOP_LOSS (safe default)
+        stop_dist = max(float(atr.iloc[-1]) * self.cfg.backtest.stop_atr_mult,
+                        ref * self._MIN_STOP_PCT)
+        direction = 1 if signal.direction is SignalDirection.BUY else -1
+        return replace(
+            signal,
+            reference_price=ref,
+            stop_loss_px=ref - direction * stop_dist,
+            take_profit_px=ref + direction * stop_dist * self.cfg.risk.min_risk_reward,
+            risk_per_trade_pct=signal.risk_per_trade_pct or self.cfg.risk.per_trade_risk_pct_default,
+        )
+
+    def _positions_notional(self) -> dict[str, float]:
+        """Current open-position notionals by instrument (Phase 3 fills these)."""
+        return {
+            pid: abs(pos.qty) * pos.avg_entry_price
+            for pid, pos in self._account.open_positions.items()
+        }
+
     def __process(self, instrument: Instrument, timeframe: Timeframe) -> None:
         bars = self._fetch(instrument, timeframe)
         if not bars:
@@ -155,14 +202,21 @@ class TradingEngine:
             logger.debug("%s HOLD (%s)", instrument.id, signal.reason_code)
             return
 
-        decision = self._risk.check(signal, self._account)
+        signal = self._enrich_signal(signal, bars)
+        context = RiskContext(reference_price=signal.reference_price,
+                              now_ns=signal.created_utc_ns)
+        decision = self._risk.check(
+            signal, self._account, context=context, positions=self._positions_notional(),
+        )
         self._events.record_risk_decision(signal, decision)
         if not decision.approved:
             logger.info("%s signal REJECTED by risk: %s", instrument.id, decision.reason_code)
             return
         # Phase 3 replaces this with the execution layer's order submission.
-        logger.info("%s %s size=%s (risk-approved; paper mode)", instrument.id,
-                    signal.direction.value, decision.suggested_size)
+        notional = (decision.suggested_size or 0.0) * (signal.reference_price or 0.0)
+        self._risk.record_order(notional_usd=notional, instrument_id=instrument.id)
+        logger.info("%s %s size=%s notional=%.2f (risk-approved; paper mode)", instrument.id,
+                    signal.direction.value, decision.suggested_size, notional)
 
     def process_instrument(self, instrument: Instrument, timeframe: Timeframe) -> None:
         try:

@@ -107,6 +107,11 @@ class Signal:
     horizon_seconds: int | None = None
     model_version: str | None = None
     created_utc_ns: int = field(default_factory=utc_now_ns)
+    # Trade-execution attributes validated by the risk gate (REQ-RSK-01..06).
+    stop_loss_px: float | None = None
+    take_profit_px: float | None = None
+    risk_per_trade_pct: float | None = None
+    reference_price: float | None = None  # where we expect to fill / enter near
 
 
 @dataclass(frozen=True, slots=True)

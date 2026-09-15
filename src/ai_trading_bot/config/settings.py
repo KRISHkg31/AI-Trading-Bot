@@ -41,17 +41,21 @@ class DataConfig(BaseModel):
 class RiskLimits(BaseModel):
     """All risk thresholds are config-driven, never code (BR-07)."""
 
-    per_trade_risk_pct_default: float = 1.0
-    min_risk_reward: float = 1.5  # reward/risk must clear this
-    min_confidence: float = 0.5
-    max_daily_loss_pct: float = 3.0
-    max_drawdown_from_peak_pct: float = 15.0
-    max_symbol_exposure_pct: float = 10.0
-    max_total_exposure_pct: float = 60.0
-    cooldown_after_exit_seconds: int = 300
-    slippage_tolerance_pct: float = 0.1
-    circuit_breaker_max_orders_per_minute: int = 10
-    max_order_notional_usd: float = 250_000.0
+    initial_equity: float = 10_000.0  # paper capital; real fills sync it (Phase 3)
+    per_trade_risk_pct_default: float = 1.0  # REQ-RSK-13, default 0.5-2%
+    min_risk_reward: float = 1.5  # REQ-RSK-02, reward >= 1.5x risk
+    min_confidence: float = 0.5  # REQ-RSK-05 / REQ-SIG-03
+    max_daily_loss_pct: float = 3.0  # REQ-RSK-21, session halt at 3-5%
+    max_drawdown_from_peak_pct: float = 15.0  # REQ-RSK-22, halt + manual review at 15-20%
+    max_symbol_exposure_pct: float = 10.0  # REQ-RSK-14
+    max_total_exposure_pct: float = 60.0  # REQ-RSK-23
+    cooldown_after_exit_seconds: int = 300  # REQ-RSK-06, anti-whipsaw
+    slippage_tolerance_pct: float = 0.1  # REQ-RSK-03 / REQ-EXE-06
+    circuit_breaker_max_orders_per_minute: int = 10  # REQ-RSK-31
+    order_history_window_seconds: int = 60
+    max_order_notional_usd: float = 250_000.0  # REQ-RSK-10 sane-caps the order size
+    sizing_method: str = "fractional"  # fractional | atr | kelly (REQ-RSK-11/12)
+    kelly_fraction: float = 0.25  # conservative multiplier for the kelly method
 
 
 class ExecutionConfig(BaseModel):
