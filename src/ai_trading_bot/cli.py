@@ -57,6 +57,10 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("show-config", help="print the resolved config (no secrets)")
 
     sub.add_parser("monitor", help="out-of-process dead-man's switch: exit 0 if the engine is fresh, non-zero if it stopped beating (REQ-RSK-34)")
+
+    v = sub.add_parser("validate", help="REQ-BT-03/07 go-live gate: walk-forward + stress on STORED bars, exit non-zero on acceptance failure")
+    v.add_argument("symbol", type=str)
+    v.add_argument("--timeframe", type=str, default="5m")
     return p
 
 
@@ -201,6 +205,33 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ENVIRONMENT {row.get('environment', '?')}  iteration={row.get('iteration', '?')}")
         return 1 if stale else 0
 
+    if args.command == "validate":
+        from ai_trading_bot.backtest import BacktestEngine, scenarios
+        from ai_trading_bot.persistence import BarStore
+
+        inst = instrument(args.symbol)
+        bars = BarStore(config.data.store_dir).load_bars(inst.id, args.timeframe)
+        if not bars:
+            logging.getLogger("ai_trading_bot.cli").error(
+                "no stored %s/%s bars in %s (run `fetch --persist` first)",
+                inst.id, args.timeframe, config.data.store_dir,
+            )
+            return 1
+        engine = BacktestEngine(config)
+        print(f"validating {len(bars)} stored {args.timeframe} bars of {inst.id}")
+        base = engine.run(inst, bars)
+        print(_format_report("backtest", base))
+        wf = engine.walk_forward(inst, bars)
+        print(_format_report("walk_forward", wf))
+        _print_delta(base, wf, "walk-forward")
+        stress = {}
+        for name in ("flash_crash", "bear_market", "volatility_spike", "gap_down"):
+            transform = getattr(scenarios, name)
+            result = engine.run_scenario(inst, bars, name, transform)
+            stress[name] = result
+            print(_format_report(f"scenario:{name}", result))
+        return _gate_validate(config, base, wf, stress)
+
     if args.command == "backtest":
         from ai_trading_bot.backtest import BacktestEngine, scenarios
 
@@ -241,6 +272,40 @@ def _format_report(label: str, result) -> str:
         f"  win rate        {m['win_rate']:.1%}  trades {m['n_trades']}  exposure {m['exposure_pct']:.1f}%\n"
         f"  fees            ${m['fees_usd']:.2f}  final equity ${m['final_equity']:,.2f}"
     )
+
+
+def _gate_validate(config, base, wf, stress: dict) -> int:
+    """Phase 6 acceptance gate (REQ-BT-03/07): out-of-sample results decide.
+
+    PASS/FAIL per criterion against the config'd thresholds; also reports each
+    stress scenario's win/loss so adverse regimes are visible, not just summed.
+    Returns 0 when the walk-forward gate passes, 1 otherwise.
+    """
+    g = config.backtest
+    m = wf.metrics.summary()
+    checks = [
+        ("walk-forward return >= 0%", m["total_return_pct"], g.accept_min_return_pct,
+         f"return {m['total_return_pct']:+.2f}%", m["total_return_pct"] >= g.accept_min_return_pct),
+        ("walk-forward max-dd <= 20%", g.accept_max_drawdown_pct, m["max_drawdown_pct"],
+         f"dd {m['max_drawdown_pct']:.2f}%", m["max_drawdown_pct"] <= g.accept_max_drawdown_pct),
+        ("walk-forward profit factor >= 1", m["profit_factor"], g.accept_min_profit_factor,
+         f"pf {m['profit_factor']:.2f}", m["profit_factor"] >= g.accept_min_profit_factor),
+    ]
+    all_pass = True
+    print("\n=== ACCEPTANCE GATE (walk-forward / out-of-sample) ===")
+    for label, lo, hi, desc, ok in checks:
+        mark = "PASS" if ok else "FAIL"
+        all_pass = all_pass and ok
+        print(f"  [{mark}] {label:32} {desc}")
+    print("\n=== STRESS REGIMES (loss visibility) ===")
+    for name, result in stress.items():
+        mm = result.metrics.summary()
+        print(f"  {name:16} return {mm['total_return_pct']:+6.2f}%  max-dd {mm['max_drawdown_pct']:6.2f}%  "
+              f"trades {mm['n_trades']:3}  pf {mm['profit_factor']:.2f}")
+    verdict = "GO-LIVE GATE PASSED (paper-parallel per GO_LIVE.md)" if all_pass \
+        else "GO-LIVE GATE FAILED (do not promote to paper/live; review strategy/config)"
+    print(f"\n{verdict}")
+    return 0 if all_pass else 1
 
 
 def _print_delta(base, other, label: str) -> None:

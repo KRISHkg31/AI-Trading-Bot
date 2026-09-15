@@ -52,6 +52,11 @@ backtest:
   walk_forward_folds: 3
   walk_forward_test_frac: 0.25
   seed: 42
+  # Phase 6 go-live acceptance gate: `validate` exits non-zero when the
+  # out-of-sample walk-forward result fails these (REQ-BT-03/07).
+  accept_min_return_pct: 0.0
+  accept_max_drawdown_pct: 20.0
+  accept_min_profit_factor: 1.0
 
 execution:
   mode: paper          # live | paper | dry_run (REQ-EXE-07/08)

@@ -231,6 +231,54 @@ def test_live_broker_gated_until_go_live() -> None:
         assert False, "gated live adapter must refuse outside environment=live"
 
 
+def test_live_broker_gated_without_credentials_even_in_live_mode() -> None:
+    # environment=live but no keys: the gate must still hold (Phase 6).
+    broker = BinanceBroker(Credentials(), environment="live")
+    try:
+        broker.submit_order(instrument("BTC/USDT"), _order())
+    except LiveUnavailableError:
+        pass
+    else:
+        assert False, "live mode without credentials must refuse to trade"
+
+
+def test_binance_live_order_flows_to_client_when_gate_clear() -> None:
+    """Phase 6: with live mode + keys + a (fake) client, submit maps the
+    vendor response into a canonical Order. The real exchange call itself is
+    only ever exercised on the spot testnet first (docs/GO_LIVE.md)."""
+    calls: list[dict] = []
+
+    class FakeClient:
+        def create_order(self, **kw: object) -> dict:
+            calls.append(kw)
+            return {"id": "vendor-1", "status": "FILLED", "price": "72000.0",
+                    "filled": "1.0"}
+
+    broker = BinanceBroker(Credentials(binance_api_key="k", binance_api_secret="s"),
+                           environment="live", client=FakeClient())
+    result = broker.submit_order(instrument("BTC/USDT"), _order(side="buy", qty=1.0))
+
+    assert calls[0]["symbol"] == "BTCUSDT"
+    assert calls[0]["side"] == "BUY"
+    assert calls[0]["type"] == "MARKET"
+    assert calls[0]["amount"] == 1.0
+    assert result.status == OrderStatus.FILLED
+    assert result.client_order_id == "vendor-1"
+    assert result.filled_qty == 1.0
+
+
+def test_binance_get_account_maps_balance() -> None:
+    class FakeClient:
+        def fetch_balance(self) -> dict:
+            return {"total": {"USDT": 1234.5}, "free": {"USDT": 1000.0}}
+
+    broker = BinanceBroker(Credentials(binance_api_key="k", binance_api_secret="s"),
+                           environment="live", client=FakeClient())
+    account = broker.get_account()
+    assert account.equity == 1234.5
+    assert account.cash == 1000.0
+
+
 def test_router_modes_pick_adapter() -> None:
     for mode, expected in (("dry_run", DryRunAdapter), ("paper", PaperBroker)):
         cfg = load_config("dev").model_copy(

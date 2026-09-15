@@ -104,6 +104,11 @@ class BacktestConfig(BaseModel):
     walk_forward_folds: int = 3
     walk_forward_test_frac: float = 0.25
     seed: int = 42
+    # Phase 6 go-live acceptance gate: `validate` exits non-zero when the
+    # out-of-sample walk-forward result fails these (REQ-BT-03, REQ-BT-07).
+    accept_min_return_pct: float = 0.0  # walk-forward total return must be >= 0
+    accept_max_drawdown_pct: float = 20.0  # and max drawdown below this
+    accept_min_profit_factor: float = 1.0  # gross win / gross loss ratio
 
 
 class MonitoringConfig(BaseModel):
