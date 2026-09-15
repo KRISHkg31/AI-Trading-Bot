@@ -7,9 +7,9 @@ adapter must never bypass it. Implementations: Binance (live + testnet), Alpaca
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from ai_trading_bot.domain import AccountState, Instrument
+from ai_trading_bot.domain import AccountState, Instrument, utc_now_ns
 
 
 class OrderStatus:
@@ -19,6 +19,10 @@ class OrderStatus:
     FILLED = "filled"
     CANCELLED = "cancelled"
     REJECTED = "rejected"
+
+
+class LiveUnavailableError(RuntimeError):
+    """Raised when live trading is attempted before the Phase 6 go-live gate."""
 
 
 @dataclass(slots=True)
@@ -34,8 +38,8 @@ class Order:
     stop_price: float | None = None
     avg_fill_price: float | None = None
     filled_qty: float = 0.0
-    created_ns: int
-    updated_ns: int
+    created_ns: int = field(default_factory=utc_now_ns)
+    updated_ns: int = field(default_factory=utc_now_ns)
 
 
 class BrokerAdapter:

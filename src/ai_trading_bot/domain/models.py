@@ -124,12 +124,61 @@ class RiskDecision:
     suggested_size: float | None = None
 
 
+class OrderSide(str, enum.Enum):
+    BUY = "buy"
+    SELL = "sell"
+
+
+class OrderType(str, enum.Enum):
+    MARKET = "market"
+    LIMIT = "limit"
+    STOP = "stop"
+    STOP_LIMIT = "stop_limit"
+    TAKE_PROFIT = "take_profit"
+
+
 @dataclass(slots=True)
 class Position:
+    """An open position. ``qty`` is signed: positive = long, negative = short.
+
+    Risk and execution read direction from the sign, so a reversal is one
+    transition (SELL to close a long opens a short net) rather than a stack.
+    """
+
     instrument_id: str
     qty: float
     avg_entry_price: float
     currency: str = "USD"
+
+    @property
+    def direction(self) -> SignalDirection:
+        if self.qty > 0:
+            return SignalDirection.BUY
+        if self.qty < 0:
+            return SignalDirection.SELL
+        return SignalDirection.HOLD
+
+    @property
+    def abs_qty(self) -> float:
+        return abs(self.qty)
+
+    def notional(self, price: float) -> float:
+        """Gross exposure at ``price`` (always positive)."""
+        return self.abs_qty * price
+
+
+@dataclass(frozen=True, slots=True)
+class Fill:
+    """One completed (simulated or real) fill, appended to the audit trail."""
+
+    order_id: str  # internal idempotency key
+    instrument_id: str
+    side: OrderSide
+    price: float
+    qty: float
+    fee_usd: float
+    ts_utc_ns: int = field(default_factory=utc_now_ns)
+    source: str = ""  # "paper" | "dry_run" | broker id
 
 
 @dataclass(slots=True)
@@ -138,12 +187,90 @@ class AccountState:
 
     equity: float
     currency: str = "USD"
+    cash: float | None = None  # None => 100% cash at construction (equity)
     open_positions: dict[str, Position] = field(default_factory=dict)
     today_pnl: float = 0.0
     realized_pnl_total: float = 0.0
     start_of_day_equity: float | None = None
     peak_equity: float | None = None
     updated_utc_ns: int = field(default_factory=utc_now_ns)
+
+    def __post_init__(self) -> None:
+        if self.cash is None:
+            self.cash = self.equity
+        if self.peak_equity is None:
+            self.peak_equity = self.equity
+        if self.start_of_day_equity is None:
+            self.start_of_day_equity = self.equity
+
+    def marked_equity(self, prices: dict[str, float]) -> float:
+        """Mark-to-market equity = cash + sum of open-position valuations."""
+        return self.cash + sum(
+            pos.notional(prices[pid])
+            for pid, pos in self.open_positions.items()
+            if pid in prices
+        )
+
+    def apply_fill(self, fill: Fill) -> None:
+        """Settle a fill into cash and open_positions (entry/exit/reversal).
+
+        BUY fill: cash -= notional + fee. SELL fill: cash += notional - fee.
+
+        Position book follows signed-quantity semantics:
+          - no position: open with sign = side (long +, short -);
+          - same direction as the existing position: add, reweight the average
+            entry by cost;
+          - opposite direction: close up to the existing size (realizing PnL on
+            the closed leg at the original average entry) and, if the fill
+            overflows the close, open a fresh opposite position at the fill
+            price. A zero position is removed.
+        """
+        notional = fill.price * fill.qty
+        pos = self.open_positions.get(fill.instrument_id)
+        sign = 1.0 if fill.side is OrderSide.BUY else -1.0
+
+        if fill.side is OrderSide.BUY:
+            self.cash -= notional + fill.fee_usd
+        else:
+            self.cash += notional - fill.fee_usd
+
+        if pos is None:
+            self.open_positions[fill.instrument_id] = Position(
+                fill.instrument_id, sign * fill.qty, fill.price, self.currency
+            )
+            self.updated_utc_ns = fill.ts_utc_ns
+            return
+
+        same_dir = (pos.qty > 0) == (sign > 0)
+        if same_dir:
+            total = pos.abs_qty + fill.qty
+            avg = (pos.abs_qty * pos.avg_entry_price + notional) / total
+            self.open_positions[fill.instrument_id] = Position(
+                fill.instrument_id, sign * total, avg, self.currency
+            )
+        else:
+            crossing = fill.qty >= pos.abs_qty
+            closed = pos.abs_qty if crossing else fill.qty
+            if pos.qty > 0:  # long closed by selling
+                pnl = (fill.price - pos.avg_entry_price) * closed
+            else:  # short covered by buying
+                pnl = (pos.avg_entry_price - fill.price) * closed
+            self.today_pnl += pnl
+            self.realized_pnl_total += pnl
+            if crossing:
+                extra = fill.qty - pos.abs_qty
+                if extra > 1e-12:
+                    self.open_positions[fill.instrument_id] = Position(
+                        fill.instrument_id, sign * extra, fill.price, self.currency
+                    )
+                else:
+                    self.open_positions.pop(fill.instrument_id, None)
+            else:
+                new_qty = pos.qty + sign * fill.qty  # shrinks toward zero
+                self.open_positions[fill.instrument_id] = Position(
+                    fill.instrument_id, new_qty, pos.avg_entry_price, self.currency
+                )
+        self.updated_utc_ns = fill.ts_utc_ns
 
     @property
     def drawdown_from_peak_pct(self) -> float:

@@ -32,6 +32,7 @@ from ai_trading_bot.domain import (
     Timeframe,
     utc_now_ns,
 )
+from ai_trading_bot.execution import ExecutionEngine, ExecutionRouter
 from ai_trading_bot.features import indicators
 from ai_trading_bot.monitoring import get_logger
 from ai_trading_bot.persistence import BarStore, EventLog
@@ -67,6 +68,8 @@ class TradingEngine:
         strategies: dict[str, Strategy] | None = None,
         filter_: SignalFilter | None = None,
         edge: ExpectedEdgeFilter | None = None,
+        executor: ExecutionEngine | None = None,
+        router: ExecutionRouter | None = None,
     ) -> None:
         self.cfg = config
         self._data = market_data
@@ -74,10 +77,17 @@ class TradingEngine:
         self._events = eventlog or EventLog()
         self._risk = risk or RiskGate(config.risk)
         self._heartbeat = heartbeat or Heartbeat()
-        # Paper capital from config; Phase 3 syncs real fills into AccountState.
+        # Paper capital from config; fills sync real ledger state (REQ-EXE-03).
         initial = config.risk.initial_equity
         self._account = AccountState(
             equity=initial, start_of_day_equity=initial, peak_equity=initial,
+        )
+        self._last_close: dict[str, float] = {}
+        self._router = router or ExecutionRouter(
+            config, reference_price=self._resolve_reference_price
+        )
+        self._executor = executor or ExecutionEngine(
+            config, self._router, self._account, eventlog=self._events,
         )
         # Config-driven strategy set (REQ-STR-10); parameter overrides apply here.
         base = dict(BUILTIN_STRATEGIES)
@@ -92,6 +102,10 @@ class TradingEngine:
             costs=CostModel.from_dict(config.costs.model_dump()),
             min_multiple=config.costs.min_edge_multiple,
         )
+
+    def _resolve_reference_price(self, instrument_id: str) -> float | None:
+        """Feed the paper broker the latest close for a given instrument."""
+        return self._last_close.get(instrument_id)
 
     def _resolve_strategies(self, available: dict[str, Strategy]) -> dict[str, Strategy]:
         active: dict[str, Strategy] = {}
@@ -195,6 +209,7 @@ class TradingEngine:
         if not bars:
             logger.warning("no bars for %s; skipping", instrument.id)
             return
+        self._last_close[instrument.id] = float(bars[-1].close)
 
         signal = self._decide(instrument, timeframe, bars)
         self._events.record_signal(signal)
@@ -212,11 +227,18 @@ class TradingEngine:
         if not decision.approved:
             logger.info("%s signal REJECTED by risk: %s", instrument.id, decision.reason_code)
             return
-        # Phase 3 replaces this with the execution layer's order submission.
-        notional = (decision.suggested_size or 0.0) * (signal.reference_price or 0.0)
-        self._risk.record_order(notional_usd=notional, instrument_id=instrument.id)
-        logger.info("%s %s size=%s notional=%.2f (risk-approved; paper mode)", instrument.id,
-                    signal.direction.value, decision.suggested_size, notional)
+
+        ref = signal.reference_price or self._last_close[instrument.id]
+        result = self._executor.execute(instrument, signal, decision, reference_price=ref)
+        for order in result.orders:
+            notional = (order.filled_qty or order.qty) * (order.avg_fill_price or ref)
+            self._risk.record_order(notional_usd=notional, instrument_id=instrument.id)
+        if result.traded:
+            logger.info("%s action=%s -> %d order(s), %d fill(s) | %s",
+                        instrument.id, result.action, len(result.orders),
+                        len(result.fills), result.note or "risk-approved paper mode")
+        else:
+            logger.info("%s execution: %s | %s", instrument.id, result.action, result.note)
 
     def process_instrument(self, instrument: Instrument, timeframe: Timeframe) -> None:
         try:
