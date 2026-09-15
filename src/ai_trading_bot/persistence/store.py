@@ -11,7 +11,7 @@ from typing import Any
 
 import pandas as pd
 
-from ai_trading_bot.domain import Bar, RiskDecision, Signal, utc_now_ns
+from ai_trading_bot.domain import Bar, RiskDecision, Signal, Timeframe, utc_now_ns
 
 
 class BarStore:
@@ -67,7 +67,7 @@ class BarStore:
         return [
             Bar(
                 instrument_id=r.instrument_id,
-                timeframe=r.timeframe,
+                timeframe=Timeframe(r.timeframe) if isinstance(r.timeframe, str) else r.timeframe,
                 ts_utc_ns=int(r.ts_utc_ns),
                 open=float(r.open),
                 high=float(r.high),

@@ -112,6 +112,17 @@ class MonitoringConfig(BaseModel):
     log_level: str = "INFO"
 
 
+class ModelsConfig(BaseModel):
+    """ML model registry + retraining knobs (Phase 4)."""
+
+    model_dir: str = "data/models"
+    label_horizon_bars: int = 12  # forward-return label over 12 x 5m bars = 1h
+    min_abs_move: float = 0.001  # |forward return| below this = neutral, dropped
+    val_frac: float = 0.2  # held-out walk-forward validation fraction
+    min_improvement: float = 0.01  # promote only when validation accuracy beats incumbent by this
+    threshold: float = 0.55  # strategy minimum P(class) to emit a direction
+
+
 class AppConfig(BaseModel):
     environment: str = "dev"
     app: AppMeta = Field(default_factory=AppMeta)
@@ -122,6 +133,7 @@ class AppConfig(BaseModel):
     risk: RiskLimits = Field(default_factory=RiskLimits)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
 
     @field_validator("environment")
     @classmethod

@@ -24,6 +24,10 @@ def test_bar_store_roundtrip(tmp_path) -> None:
     assert len(out) == 1
     assert out[0].close == 1.5
     assert out[0].timeframe == Timeframe.M5
+    # Regression: the round-trip must restore the enum instance, not the raw
+    # string "5m", or downstream b.timeframe.value crashes (engine re-persist).
+    assert isinstance(out[0].timeframe, Timeframe)
+    assert out[0].timeframe.value == "5m"
 
     # idempotent on duplicate timestamp (keep latest)
     dup = Bar(

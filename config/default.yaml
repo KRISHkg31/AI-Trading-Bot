@@ -63,3 +63,11 @@ monitoring:
   alert_channels: []   # e.g. ["telegram", "slack"] once tokens set (REQ-MON-02)
   log_dir: logs
   log_level: INFO
+
+models:
+  model_dir: data/models          # versioned ML artifacts (Phase 4)
+  label_horizon_bars: 12          # forward-return label over 12 x 5m bars = 1h
+  min_abs_move: 0.001             # |forward return| below this = neutral/dropped
+  val_frac: 0.2                   # walk-forward validation fraction
+  min_improvement: 0.01           # promote only if validation accuracy beats incumbent by this
+  threshold: 0.55                 # minimum P(class) for an ML strategy to emit a direction

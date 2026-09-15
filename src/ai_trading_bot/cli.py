@@ -44,6 +44,16 @@ def _build_parser() -> argparse.ArgumentParser:
     b.add_argument("--walk-forward", action="store_true", help="REQ-BT-03 out-of-sample run")
     b.add_argument("--stress", action="store_true", help="REQ-BT-05 run adverse-regime scenarios")
 
+    m = sub.add_parser("models", help="inspect ML model registry and manage active versions (REQ-STR-04)")
+    m.add_argument("--activate", metavar="MODEL_ID@VERSION", default=None,
+                   help="pin the active version, e.g. ml_momentum@2 (the rollback lever)")
+
+    r = sub.add_parser("retrain", help="retrain ML models from stored bars; promote only if improved")
+    r.add_argument("--symbol", type=str, default="BTC/USDT")
+    r.add_argument("--timeframe", type=str, default="5m")
+    r.add_argument("--horizon-bars", type=int, default=None,
+                   help="override models.label_horizon_bars (default: config)")
+
     sub.add_parser("show-config", help="print the resolved config (no secrets)")
     return p
 
@@ -93,6 +103,75 @@ def main(argv: list[str] | None = None) -> int:
             poll_interval_s=args.poll,
             max_iterations=max(1, round(args.seconds / args.poll)),
         )
+        return 0
+
+    if args.command == "models":
+        from ai_trading_bot.models import MODEL_IDS, ModelRepo
+
+        repo = ModelRepo(config.models.model_dir)
+        if args.activate:
+            try:
+                model_id, version = args.activate.rsplit("@", 1)
+                version = int(version)
+            except ValueError:
+                logging.getLogger("ai_trading_bot.cli").error(
+                    "--activate expects MODEL_ID@VERSION, got %r", args.activate
+                )
+                return 2
+            if model_id not in MODEL_IDS:
+                logging.getLogger("ai_trading_bot.cli").error(
+                    "unknown model %r (known: %s)", model_id, ", ".join(MODEL_IDS)
+                )
+                return 2
+            try:
+                repo.activate(model_id, version)
+                print(f"active {model_id} pinned -> v{version}")
+            except ValueError as exc:
+                logging.getLogger("ai_trading_bot.cli").error("%s", exc)
+                return 2
+        for row in repo.list():
+            mark = "*" if row["active"] else " "
+            acc = f"{row['accuracy']:.3f}" if row["accuracy"] is not None else "-"
+            ll = f"{row['log_loss']:.3f}" if row["log_loss"] is not None else "-"
+            print(
+                f"{mark} {row['model_id']}@v{row['version']} kind={row['kind']:14} "
+                f"feat={row['feature_version']} acc={acc:>6} ll={ll:>7} "
+                f"n={row['n_samples']} skl={row['sklearn_version']}"
+            )
+        if not repo.list():
+            print("(no trained models yet - run `ai-trading-bot retrain`)")
+        return 0
+
+    if args.command == "retrain":
+        from ai_trading_bot.models import ModelRepo
+        from ai_trading_bot.persistence import BarStore
+        from ai_trading_bot.training import retrain_all
+
+        repo = ModelRepo(config.models.model_dir)
+        horizon = args.horizon_bars or config.models.label_horizon_bars
+        inst = instrument(args.symbol)
+        bars = BarStore(config.data.store_dir).load_bars(inst.id, args.timeframe)
+        if not bars:
+            logging.getLogger("ai_trading_bot.cli").error(
+                "no stored %s/%s bars in %s (run `fetch --persist` first)",
+                inst.id, args.timeframe, config.data.store_dir,
+            )
+            return 1
+        print(
+            f"retraining on {len(bars)} {args.timeframe} bars of {inst.id} "
+            f"(horizon={horizon} bars)"
+        )
+        for outcome in retrain_all(repo, {inst.id: bars}, label_horizon_bars=horizon):
+            if outcome.get("skipped"):
+                print(f"  {outcome['model_id']}: SKIPPED {outcome['skipped']}")
+                continue
+            cand = outcome["candidate_metrics"]
+            ll = f"{cand.get('log_loss'):.3f}" if cand.get("log_loss") else "-"
+            print(
+                f"  {outcome['model_id']} v{outcome['version']}: promoted={outcome['promoted']} "
+                f"val_acc={cand['accuracy']:.3f} val_ll={ll} "
+                f"(incumbent v{outcome['incumbent_version']})"
+            )
         return 0
 
     if args.command == "backtest":

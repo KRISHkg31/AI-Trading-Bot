@@ -71,6 +71,37 @@ def test_engine_data_quality_kill_flattens_risk(tmp_path) -> None:
     assert engine._risk._flattened is True
 
 
+def test_engine_wires_ml_strategies_from_config(tmp_path) -> None:
+    """When ml_* ids are in strategy.active the engine builds them against the
+    configured registry dir; an empty registry must yield HOLD/MODEL_MISSING,
+    never a crash (Phase 4, REQ-STR-04)."""
+    from ai_trading_bot.domain import SignalDirection
+
+    cfg = load_config("dev").model_copy(deep=True)
+    cfg.strategy = StrategyConfig(active=["ml_momentum", "ml_mean_reversion"])
+    cfg.models.model_dir = str(tmp_path / "models")  # hermetic: empty registry
+    inst = instrument("BTC/USDT")
+    adapter = FakeAdapter(inst.asset_class)
+    engine = TradingEngine(
+        cfg, market_data={inst.asset_class: adapter},
+        store=BarStore(base_dir=tmp_path / "raw"),
+        eventlog=EventLog(db_path=tmp_path / "events.sqlite3"),
+        risk=RiskGate(cfg.risk),
+    )
+    assert "ml_momentum" in engine._strategies
+    assert "ml_mean_reversion" in engine._strategies
+    # Both are wired to the config's registry dir.
+    for sid in ("ml_momentum", "ml_mean_reversion"):
+        assert str(engine._strategies[sid]._repo._root) == cfg.models.model_dir
+    # With no artifacts, inference degrades to HOLD/MODEL_MISSING, not a crash.
+    bars = adapter.fetch_bars(inst, Timeframe.M5, None, None)
+    sig = engine._strategies["ml_momentum"].generate(inst, bars * 80)
+    assert sig.direction is SignalDirection.HOLD
+    assert sig.reason_code == "MODEL_MISSING"
+    # The whole loop still runs clean on the ML-only config.
+    engine.process_instrument(inst, Timeframe.M5)
+
+
 class FakeTrendAdapter(MarketDataAdapter):
     """30 steadily rising bars so EMATrend fires a real EMA_BULL BUY."""
 

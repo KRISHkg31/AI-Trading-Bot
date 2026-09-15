@@ -93,6 +93,8 @@ class TradingEngine:
         base = dict(BUILTIN_STRATEGIES)
         if strategies:
             base.update(strategies)
+        # ML strategies need the registry wired (Phase 4) before the override map.
+        base.update(self._ml_strategies())
         self._strategies = self._resolve_strategies(base)
         self._filter = filter_ or SignalFilter(
             min_confidence=config.risk.min_confidence,
@@ -106,6 +108,19 @@ class TradingEngine:
     def _resolve_reference_price(self, instrument_id: str) -> float | None:
         """Feed the paper broker the latest close for a given instrument."""
         return self._last_close.get(instrument_id)
+
+    def _ml_strategies(self) -> dict[str, Strategy]:
+        """ML strategies backed by the versioned registry (Phase 4, REQ-STR-04).
+
+        Built on demand against ``config.models.model_dir``; if the registry is
+        empty the strategies still load (they emit HOLD / MODEL_MISSING until a
+        retrain produces active artifacts) — presence in ``strategy.active`` is the
+        only switch that makes them run.
+        """
+        from ai_trading_bot.models import ModelRepo
+        from ai_trading_bot.strategy.ml import build_ml_strategies
+
+        return build_ml_strategies(ModelRepo(self.cfg.models.model_dir))
 
     def _resolve_strategies(self, available: dict[str, Strategy]) -> dict[str, Strategy]:
         active: dict[str, Strategy] = {}
