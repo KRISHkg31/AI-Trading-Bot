@@ -71,6 +71,27 @@ def test_engine_data_quality_kill_flattens_risk(tmp_path) -> None:
     assert engine._risk._flattened is True
 
 
+def test_engine_records_metrics_and_alerts_on_kill(tmp_path) -> None:
+    """Phase 5: each pass emits a metric row; the data-quality kill fires a
+    transition alert into the EventLog (REQ-MON-01/02, REQ-RSK-32)."""
+    engine = _engine(tmp_path, stale=True)
+    inst = instrument("BTC/USDT")
+    engine.run_forever([inst], timeframe=Timeframe.M5, poll_interval_s=0.01,
+                       max_iterations=2)
+
+    metric_rows = engine._events.query("metric")
+    assert len(metric_rows) == 2  # one self-contained snapshot per pass
+    last = metric_rows[0]["payload"]
+    assert last["risk_state"] == "SYSTEM_FLAT"  # stale data stuck -> killed
+    assert last["n_positions"] == 0
+    assert "equity" in last and "exposure_usd" in last
+
+    # The kill fired one transition alert (data-quality kill -> SYSTEM_FLAT).
+    halted = engine._events.query("risk_halted")
+    assert len(halted) >= 1
+    assert halted[0]["payload"]["reason"] == "SYSTEM_FLAT"
+
+
 def test_engine_wires_ml_strategies_from_config(tmp_path) -> None:
     """When ml_* ids are in strategy.active the engine builds them against the
     configured registry dir; an empty registry must yield HOLD/MODEL_MISSING,

@@ -63,6 +63,7 @@ monitoring:
   alert_channels: []   # e.g. ["telegram", "slack"] once tokens set (REQ-MON-02)
   log_dir: logs
   log_level: INFO
+  heartbeat_stale_seconds: 60  # dead-man's switch: gate flattens past this age (REQ-RSK-34)
 
 models:
   model_dir: data/models          # versioned ML artifacts (Phase 4)

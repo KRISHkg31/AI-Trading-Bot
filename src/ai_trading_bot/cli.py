@@ -55,6 +55,8 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="override models.label_horizon_bars (default: config)")
 
     sub.add_parser("show-config", help="print the resolved config (no secrets)")
+
+    sub.add_parser("monitor", help="out-of-process dead-man's switch: exit 0 if the engine is fresh, non-zero if it stopped beating (REQ-RSK-34)")
     return p
 
 
@@ -173,6 +175,31 @@ def main(argv: list[str] | None = None) -> int:
                 f"(incumbent v{outcome['incumbent_version']})"
             )
         return 0
+
+    if args.command == "monitor":
+        from ai_trading_bot.monitoring import latest_metrics, metrics_age_seconds
+        from ai_trading_bot.persistence import EventLog
+
+        # Same default EventLog the engine writes to; a relocated storedir must
+        # be re-pointed here (the engine currently always uses the default).
+        log = EventLog()
+        row = latest_metrics(log)
+        if row is None:
+            print("ERROR: no metric rows in the EventLog yet - engine has never run")
+            return 3
+        age = metrics_age_seconds(log)
+        stale = age is not None and age > config.monitoring.heartbeat_stale_seconds
+        marker = "STALE" if stale else "OK"
+        print(f"HEARTBEAT   {marker}  age={age:.1f}s (threshold {config.monitoring.heartbeat_stale_seconds}s)")
+        print(f"RISK_STATE  {row.get('risk_state', '?')}")
+        print(f"EQUITY      {row.get('equity'):,.2f}  peak {row.get('peak_equity'):,.2f}  "
+              f"dd {row.get('drawdown_from_peak_pct')}%  day {row.get('day_loss_pct')}%")
+        print(f"POSITIONS   n={row.get('n_positions')}  exposure={row.get('exposure_usd'):,.2f}")
+        versions = row.get("model_versions") or {}
+        if versions:
+            print("MODELS      " + "  ".join(f"{k}={v or '-'}" for k, v in versions.items()))
+        print(f"ENVIRONMENT {row.get('environment', '?')}  iteration={row.get('iteration', '?')}")
+        return 1 if stale else 0
 
     if args.command == "backtest":
         from ai_trading_bot.backtest import BacktestEngine, scenarios

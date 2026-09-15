@@ -90,6 +90,25 @@ class RiskGate:
         _ = notional_usd, instrument_id  # breaker is rate-based for now
         self._order_ts_ns.append(now_ns if now_ns is not None else self._now_ns())
 
+    # -- monitoring -------------------------------------------------------
+    def assess(self, account: AccountState) -> str | None:
+        """Signal-independent Tier-3 assessment (REQ-RSK-21/22).
+
+        ``check`` only discovers a daily-loss/drawdown halt when a *signal*
+        passes through it; this lets the monitoring layer evaluate the same
+        conditions every poll so a halt alerts even when no signal is live.
+        The halt takes hold exactly as in ``check``; recovery is manual via
+        :meth:`resume`.
+        """
+        r = self._limits
+        if account.day_loss_pct >= r.max_daily_loss_pct:
+            self._halted_reason = "DAILY_LOSS_LIMIT"
+            return "DAILY_LOSS_LIMIT"
+        if account.drawdown_from_peak_pct >= r.max_drawdown_from_peak_pct:
+            self._halted_reason = "DRAWDOWN_LIMIT"
+            return "DRAWDOWN_LIMIT"
+        return None
+
     # -- main entry -------------------------------------------------------
     def check(
         self,

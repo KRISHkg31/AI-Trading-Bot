@@ -104,6 +104,18 @@ class TradingEngine:
             costs=CostModel.from_dict(config.costs.model_dump()),
             min_multiple=config.costs.min_edge_multiple,
         )
+        # Phase 5 observability: metrics snapshots + transition-based risk alerts.
+        # Alerts degrade to log-only when no channel credentials are configured
+        # (REQ-MON-02), so dev/backtest environments need nothing set up.
+        from ai_trading_bot.config import get_credentials
+        from ai_trading_bot.monitoring import MetricsRecorder, Notifier, RiskAlertWatcher
+
+        self._metrics = MetricsRecorder(self._events, environment=config.environment)
+        self._alerts = RiskAlertWatcher(
+            self._risk,
+            self._events,
+            Notifier(get_credentials(), channels=config.monitoring.alert_channels),
+        )
 
     def _resolve_reference_price(self, instrument_id: str) -> float | None:
         """Feed the paper broker the latest close for a given instrument."""
@@ -212,6 +224,15 @@ class TradingEngine:
             risk_per_trade_pct=signal.risk_per_trade_pct or self.cfg.risk.per_trade_risk_pct_default,
         )
 
+    def _model_versions(self) -> dict[str, str | None]:
+        """Active registry versions by ML strategy, if any (Phase 4/5 metrics)."""
+        out: dict[str, str | None] = {}
+        for sid, strategy in self._strategies.items():
+            probe = getattr(strategy, "_model_version_or_none", None)
+            if probe is not None:
+                out[sid] = probe()
+        return out
+
     def _positions_notional(self) -> dict[str, float]:
         """Current open-position notionals by instrument (Phase 3 fills these)."""
         return {
@@ -280,6 +301,25 @@ class TradingEngine:
             self._heartbeat.beat()
             for instrument in instruments:
                 self.process_instrument(instrument, timeframe)
+            # Phase 5: one self-contained snapshot row + risk-state poll per
+            # pass. The row doubles as the out-of-process heartbeat (REQ-RSK-34).
+            self._metrics.record(
+                account=self._account,
+                last_prices=dict(self._last_close),
+                model_versions=self._model_versions(),
+                risk_state=self._risk.halted or "OK",
+                iteration=iteration,
+            )
+            self._alerts.poll(self._account)
             age = self._heartbeat.age_seconds()
-            logger.info("heartbeat ok age=%.1fs iteration=%s", age, iteration)
+            if age > self.cfg.monitoring.heartbeat_stale_seconds:
+                # Dead-man's switch (REQ-RSK-34): a stopped loop must not quietly
+                # keep the gate open. Flatten so nothing new can trade.
+                logger.error(
+                    "dead-man's switch: heartbeat age %.1fs > %.0fs; risk gate flattened",
+                    age, self.cfg.monitoring.heartbeat_stale_seconds,
+                )
+                self._risk.kill()
+            else:
+                logger.info("heartbeat ok age=%.1fs iteration=%s", age, iteration)
             time.sleep(poll_interval_s)

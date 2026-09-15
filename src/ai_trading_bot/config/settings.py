@@ -110,6 +110,7 @@ class MonitoringConfig(BaseModel):
     alert_channels: list[str] = Field(default_factory=list)
     log_dir: str = "logs"
     log_level: str = "INFO"
+    heartbeat_stale_seconds: int = 60  # REQ-RSK-34 dead-man's switch threshold
 
 
 class ModelsConfig(BaseModel):
@@ -214,6 +215,7 @@ class Credentials:
     zerodha_api_secret: str | None = None
     zerodha_access_token: str | None = None
     telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
     slack_webhook_url: str | None = None
     anthropic_api_key: str | None = None
 
@@ -234,6 +236,7 @@ def get_credentials() -> Credentials:
         zerodha_api_secret=os.environ.get("ZERODHA_API_SECRET"),
         zerodha_access_token=os.environ.get("ZERODHA_ACCESS_TOKEN"),
         telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN"),
+        telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID"),
         slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL"),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
     )
